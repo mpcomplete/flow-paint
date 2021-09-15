@@ -4,7 +4,7 @@ import * as Webgl2 from "./regl-webgl2-compat.js"
 const regl = Webgl2.overrideContextType(() => Regl({extensions: ['WEBGL_draw_buffers', 'OES_texture_float', 'OES_texture_float_linear', 'OES_texture_half_float', 'ANGLE_instanced_arrays']}));
 
 var config = {
-  numParticles: 1,
+  numParticles: 900,
 };
 window.onload = function() {
   initFramebuffers();
@@ -158,11 +158,9 @@ const bufferA = regl({
   }
   
   vec2 randomOnEdge(vec2 uv, vec2 MAX){
-      uv *= .2;
-      float edge = remappedNoise(vec3(uv, 0.));
-      float pos = remappedNoise(vec3(uv, .5));
-      
-      return vec2(step(.5, edge) * MAX.x, MAX.y * pos);
+    float x = noise(vec3(uv, 0.));
+    float y = noise(vec3(uv, .5));
+    return vec2(x, y);
   }
   
   vec3 hsv2rgb(vec3 c) {
@@ -184,8 +182,8 @@ const bufferA = regl({
     //     return;
     vec2 pos = texelFetch(particlesTex, ivec2(ijf), 0).zw;
 
-    float f = turb(pos * .1, time);
-    vec2 velocity = rotate2D(vec2(0., 1.), f * PI * 2.);
+    float f = noise(vec3(pos*5., time));
+    vec2 velocity = rotate2D(vec2(1., 0.), f * PI * 2.);
 
     vec2 newPos = pos + velocity * .01;
     checkForBounds(partIndex, newPos, pos);
@@ -214,22 +212,52 @@ const drawParticles = baseVertShader({
   uniform float numParticles;
   out vec4 fragColor;
 
+  //3D gradient noise by Íñigo Quílez
+  vec3 hash(vec3 p){
+    p = vec3( dot(p,vec3(127.1,311.7, 74.7)),
+          dot(p,vec3(269.5,183.3,246.1)),
+          dot(p,vec3(113.5,271.9,124.6)));
+  
+    return -1.0 + 2.0*fract(sin(p)*43758.5453123);
+  }
+
+  float noise(in vec3 p){
+    vec3 i = floor( p );
+    vec3 f = fract( p );
+
+    vec3 u = f*f*(3.0-2.0*f);
+  
+      return mix( mix( mix( dot( hash( i + vec3(0.0,0.0,0.0) ), f - vec3(0.0,0.0,0.0) ), 
+                            dot( hash( i + vec3(1.0,0.0,0.0) ), f - vec3(1.0,0.0,0.0) ), u.x),
+                       mix( dot( hash( i + vec3(0.0,1.0,0.0) ), f - vec3(0.0,1.0,0.0) ), 
+                            dot( hash( i + vec3(1.0,1.0,0.0) ), f - vec3(1.0,1.0,0.0) ), u.x), u.y),
+                  mix( mix( dot( hash( i + vec3(0.0,0.0,1.0) ), f - vec3(0.0,0.0,1.0) ), 
+                            dot( hash( i + vec3(1.0,0.0,1.0) ), f - vec3(1.0,0.0,1.0) ), u.x),
+                       mix( dot( hash( i + vec3(0.0,1.0,1.0) ), f - vec3(0.0,1.0,1.0) ), 
+                            dot( hash( i + vec3(1.0,1.0,1.0) ), f - vec3(1.0,1.0,1.0) ), u.x), u.y), u.z );
+  }
+  vec3 hsv2rgb(vec3 c) {
+    // Íñigo Quílez
+    // https://www.shadertoy.com/view/MsS3Wc
+    vec3 rgb = clamp(abs(mod(c.x*6.+vec3(0.,4.,2.),6.)-3.)-1.,0.,1.);
+    rgb = rgb * rgb * (3. - 2. * rgb);
+    return c.z * mix(vec3(1.), rgb, c.y);
+  }
   float dist2Line(vec2 a, vec2 b, vec2 p) {
     p -= a, b -= a;
     float h = clamp(dot(p, b) / dot(b, b), 0., 1.);
     return length( p - b * h );
   }
   void main() {
-    vec3 clr = vec3(1., 1., 0.);
-    float seeds = 0.;
-    {
-      for (float i = 0.; i < numParticles; i++) {
-        vec4 pos = texelFetch(particlesTex, ivec2(i, 0), 0);
-        // seeds += 1. - smoothstep(.001, .005, distance(uv, pos.zw));
-        seeds += 1. - smoothstep(.0002, .0005, dist2Line(pos.xy, pos.zw, uv));
-      }
+    vec3 clr = vec3(0.);
+    for (float i = 0.; i < numParticles; i++) {
+      vec4 pos = texelFetch(particlesTex, ivec2(i, 0), 0);
+      // seeds += 1. - smoothstep(.001, .005, distance(uv, pos.zw));
+      float p = 1. - smoothstep(.0002, .0005, dist2Line(pos.xy, pos.zw, uv));
+      if (p > 0.)
+        clr += hsv2rgb(vec3(i/numParticles, 1., 1.));
     }
-  	fragColor = vec4(clr * seeds + texture(screenTex, uv).rgb, 1.);
+  	fragColor = vec4(clr + texture(screenTex, uv).rgb, 1.);
   }`,
 
   uniforms: {
