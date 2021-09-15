@@ -24,6 +24,7 @@ function initFramebuffers() {
     height: canvas.height,
   });
 
+  // Holds the particle positions. particles[i, 0].xyzw = {lastPosX, lastPosY, posX, posY}
   particlesFBO = createDoubleFBO(1, {
     type: 'float32',
     format: 'rgba',
@@ -39,11 +40,6 @@ function initFramebuffers() {
   // });
 }
 
-// Textures hold a single property for every critter.
-// Each critter has a single row in a given property's texture, with the column representing
-// history over time (the "tail").
-// ex. positionTexture[X, Y] = critter X's position at history Y.
-// History is done as a circular queue, with the current history index incrementing each frame from 0 to tailLength.
 function createFBO(count, props) {
   return regl.framebuffer({
     color: Array.from({length: count}, () => regl.texture(props)),
@@ -157,14 +153,8 @@ const bufferA = regl({
   }
   
   vec2 rotate2D (vec2 _st, float _angle) {
-      return  mat2(cos(_angle), -sin(_angle),
+      return mat2(cos(_angle), -sin(_angle),
                   sin(_angle), cos(_angle)) * _st;
-  }
-  
-  float dist2Line(vec2 a, vec2 b, vec2 p) { 
-      p -= a, b -= a;
-    float h = clamp(dot(p, b) / dot(b, b), 0., 1.); 
-    return length( p - b * h );                       
   }
   
   vec2 randomOnEdge(vec2 uv, vec2 MAX){
@@ -224,17 +214,19 @@ const drawParticles = baseVertShader({
   uniform float numParticles;
   out vec4 fragColor;
 
+  float dist2Line(vec2 a, vec2 b, vec2 p) {
+    p -= a, b -= a;
+    float h = clamp(dot(p, b) / dot(b, b), 0., 1.);
+    return length( p - b * h );
+  }
   void main() {
     vec3 clr = vec3(1., 1., 0.);
     float seeds = 0.;
     {
-      vec4 pos;
       for (float i = 0.; i < numParticles; i++) {
-        vec4 newPos = texelFetch(particlesTex, ivec2(i, 0), 0);
-        seeds += 1. - smoothstep(.001, .005, distance(uv, newPos.zw));
-      // seeds += 1. - smoothstep(.01, .02, dist2Line(newPos.xy, newPos.zw, uv));
-    //seeds = max(seeds, step(distance(pos.zw, newPos.zw), 3.) * step(1., i) * smoothstep(.1, .05, dist2Line(pos.zw, newPos.zw, uv)));
-        pos = newPos;
+        vec4 pos = texelFetch(particlesTex, ivec2(i, 0), 0);
+        // seeds += 1. - smoothstep(.001, .005, distance(uv, pos.zw));
+        seeds += 1. - smoothstep(.0002, .0005, dist2Line(pos.xy, pos.zw, uv));
       }
     }
   	fragColor = vec4(clr * seeds + texture(screenTex, uv).rgb, 1.);
