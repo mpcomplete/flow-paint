@@ -135,13 +135,13 @@ vec3 hsv2rgb(vec3 c) {
   rgb = rgb * rgb * (3. - 2. * rgb);
   return c.z * mix(vec3(1.), rgb, c.y);
 }
-// TODO: figure out why the angle is negated in bufferA vs drawParticles.
+// TODO: figure out why the angle is negated in updateParticles vs drawParticles.
 vec2 velocityAtPoint(vec2 p, vec2 uv, float signHACK) {
   float f = noise(p*5.);
   return rotate(uv, f * PI * 2. * signHACK);
 }`;
 
-const bufferA = regl({
+const updateParticles = regl({
   vert: `#version 300 es
   precision highp float;
   in vec2 position;
@@ -200,6 +200,36 @@ const drawParticles = baseVertShader({
     float h = clamp(dot(p, b) / dot(b, b), 0., 1.);
     return length( p - b * h );
   }
+  void main() {
+    vec3 clr = vec3(0.);
+    for (float i = 0.; i < numParticles; i++) {
+      vec4 pos = texelFetch(particlesTex, ivec2(i, 0), 0);
+      // seeds += 1. - smoothstep(.001, .005, distance(uv, pos.zw));
+      float p = 1. - smoothstep(.0002, .0005, dist2Line(pos.xy, pos.zw, uv));
+      if (p > 0.)
+        clr += hsv2rgb(vec3(i/numParticles, 1., 1.));
+    }
+
+    // fragColor = vec4(clr, 1.);
+    fragColor = vec4(clr + texture(screenTex, uv).rgb * .95, 1.);
+  }`,
+
+  uniforms: {
+    screenTex: regl.prop("screen"),
+    particlesTex: () => particlesFBO.src,
+    numParticles: () => config.numParticles,
+    time: regl.context('time'),
+  },
+});
+
+const drawFlowField = baseVertShader({
+  frag: commonFrag + `
+  in vec2 uv;
+  uniform sampler2D screenTex;
+  uniform float time;
+  out vec4 fragColor;
+
+  // p is base, q is width,height
   float sdTriangleIsosceles( in vec2 p, in vec2 q ) {
       p.x = abs(p.x);
       vec2 a = p - q*clamp( dot(p,q)/dot(q,q), 0.0, 1.0 );
@@ -215,26 +245,13 @@ const drawParticles = baseVertShader({
   }
   void main() {
     vec3 clr = vec3(0.);
-    for (float i = 0.; i < numParticles; i++) {
-      vec4 pos = texelFetch(particlesTex, ivec2(i, 0), 0);
-      // seeds += 1. - smoothstep(.001, .005, distance(uv, pos.zw));
-      float p = 1. - smoothstep(.0002, .0005, dist2Line(pos.xy, pos.zw, uv));
-      if (p > 0.)
-        clr += hsv2rgb(vec3(i/numParticles, 1., 1.));
-    }
-
     vec2 velocity = velocityAtPoint(uv, fract(uv*64.) - .5, 1.0);
     float c = cell(velocity);
-    clr += vec3(c);
-
-    fragColor = vec4(clr, 1.);
-    // fragColor = vec4(clr + texture(screenTex, uv).rgb * .98, 1.);
+    fragColor = vec4(vec3(c) + texture(screenTex, uv).rgb, 1.);
   }`,
 
   uniforms: {
     screenTex: regl.prop("screen"),
-    particlesTex: () => particlesFBO.src,
-    numParticles: () => config.numParticles,
     time: regl.context('time'),
   },
 });
@@ -264,9 +281,11 @@ regl.frame(function(context) {
   regl.clear({color: [0, 0, 0, 1]});
   regl.clear({color: [0, 0, 0, 1], framebuffer: screenFBO.dst});
 
-  bufferA();
+  updateParticles();
   particlesFBO.swap();
 
+  drawFlowField({screen: screenFBO.src, framebuffer: screenFBO.dst});
+  screenFBO.swap();
   drawParticles({screen: screenFBO.src, framebuffer: screenFBO.dst});
   screenFBO.swap();
 
