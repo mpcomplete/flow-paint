@@ -32,7 +32,7 @@ function initFramebuffers() {
     width: config.numParticles,
     height: 1,
   });
-  
+
   // particlesFBO.src.color[0].subimage({ // position
   //   width: config.numParticles,
   //   height: 1,
@@ -77,6 +77,70 @@ const baseVertShader = (opts) => regl(Object.assign(opts, {
   framebuffer: regl.prop("framebuffer"),
 }));
 
+const commonFrag = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+
+#define PI 3.1415
+
+float random (in vec2 _st) {
+  return fract(sin(dot(_st.xy,
+                      vec2(12.9898,78.233)))*
+      43758.5453123);
+}
+// Based on Morgan McGuire @morgan3d
+// https://www.shadertoy.com/view/4dS3Wd
+float noise (in vec2 _st) {
+  vec2 i = floor(_st);
+  vec2 f = fract(_st);
+
+  // Four corners in 2D of a tile
+  float a = random(i);
+  float b = random(i + vec2(1.0, 0.0));
+  float c = random(i + vec2(0.0, 1.0));
+  float d = random(i + vec2(1.0, 1.0));
+
+  vec2 u = f * f * (3.0 - 2.0 * f);
+
+  return mix(a, b, u.x) +
+          (c - a)* u.y * (1.0 - u.x) +
+          (d - b) * u.x * u.y;
+}
+float turb( vec2 U, float t ) {
+  float f = 0., q=1., s=0.;
+
+  float m = 2.;
+// mat2 m = mat2( 1.6,  1.2, -1.2,  1.6 );
+  for (int i=0; i<2; i++) {
+    U -= t*vec2(.6,.2);
+    f += q*noise( U );
+    s += q;
+    q /= 2.; U *= m; t *= 1.71;  // because of diff, we may rather use q/=4.;
+  }
+  return f/s;
+}
+vec2 rotate(vec2 _st, float _angle) {
+    return mat2(cos(_angle), -sin(_angle),
+                sin(_angle), cos(_angle)) * _st;
+}
+vec2 randomPoint(vec2 uv) {
+  float x = noise(uv);
+  float y = noise(vec2(uv.x, uv.y + .5));
+  return vec2(x, y);
+}
+vec3 hsv2rgb(vec3 c) {
+  // Íñigo Quílez
+  // https://www.shadertoy.com/view/MsS3Wc
+  vec3 rgb = clamp(abs(mod(c.x*6.+vec3(0.,4.,2.),6.)-3.)-1.,0.,1.);
+  rgb = rgb * rgb * (3. - 2. * rgb);
+  return c.z * mix(vec3(1.), rgb, c.y);
+}
+// TODO: figure out why the angle is negated in bufferA vs drawParticles.
+vec2 velocityAtPoint(vec2 p, vec2 uv, float signHACK) {
+  float f = noise(p*5.);
+  return rotate(uv, f * PI * 2. * signHACK);
+}`;
+
 const bufferA = regl({
   vert: `#version 300 es
   precision highp float;
@@ -90,72 +154,12 @@ const bufferA = regl({
     gl_Position = vec4(position, 0.0, 1.0);
   }`,
 
-  frag: `#version 300 es
-  precision highp float;
-  precision highp sampler2D;
-
+  frag: commonFrag + `
   in vec2 uv;
   in vec2 ijf;
   out vec4 fragColor;
   uniform sampler2D particlesTex;
   uniform float time;
-
-#define PI 3.1415
-
-  float random (in vec2 _st) {
-    return fract(sin(dot(_st.xy,
-                        vec2(12.9898,78.233)))*
-        43758.5453123);
-  }
-
-  // Based on Morgan McGuire @morgan3d
-  // https://www.shadertoy.com/view/4dS3Wd
-  float noise (in vec2 _st) {
-    vec2 i = floor(_st);
-    vec2 f = fract(_st);
-
-    // Four corners in 2D of a tile
-    float a = random(i);
-    float b = random(i + vec2(1.0, 0.0));
-    float c = random(i + vec2(0.0, 1.0));
-    float d = random(i + vec2(1.0, 1.0));
-
-    vec2 u = f * f * (3.0 - 2.0 * f);
-
-    return mix(a, b, u.x) +
-            (c - a)* u.y * (1.0 - u.x) +
-            (d - b) * u.x * u.y;
-  }
-  
-  float turb( vec2 U, float t )
-  { 	float f = 0., q=1., s=0.;
-
-      float m = 2.; 
-   // mat2 m = mat2( 1.6,  1.2, -1.2,  1.6 );
-      for (int i=0; i<2; i++) {
-        U -= t*vec2(.6,.2);
-        f += q*noise( U ); 
-        s += q; 
-        q /= 2.; U *= m; t *= 1.71;  // because of diff, we may rather use q/=4.;
-      }
-      return f/s; 
-  }
-  vec2 rotate2D(vec2 _st, float _angle) {
-      return mat2(cos(_angle), -sin(_angle),
-                  sin(_angle), cos(_angle)) * _st;
-  }
-  vec2 randomPoint(vec2 uv) {
-    float x = noise(uv);
-    float y = noise(vec2(uv.x, uv.y + .5));
-    return vec2(x, y);
-  }
-  vec3 hsv2rgb(vec3 c) {
-    // Íñigo Quílez
-    // https://www.shadertoy.com/view/MsS3Wc
-    vec3 rgb = clamp(abs(mod(c.x*6.+vec3(0.,4.,2.),6.)-3.)-1.,0.,1.);
-    rgb = rgb * rgb * (3. - 2. * rgb);
-    return c.z * mix(vec3(1.), rgb, c.y);
-  }
 
   void checkForBounds(inout vec2 pos, inout vec2 newPos){
     if (newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.)
@@ -164,10 +168,7 @@ const bufferA = regl({
 
   void main() {
     vec2 pos = texelFetch(particlesTex, ivec2(ijf), 0).zw;
-
-    float f = noise(pos*5.);
-    // TODO: figure out why the angle is negated vs drawParticles.
-    vec2 velocity = rotate2D(vec2(1., 0.), -f * PI * 2.);
+    vec2 velocity = velocityAtPoint(pos, vec2(1., 0.), -1.);
 
     vec2 newPos = pos + velocity * .01;
     checkForBounds(pos, newPos);
@@ -186,10 +187,7 @@ const bufferA = regl({
 });
 
 const drawParticles = baseVertShader({
-  frag: `#version 300 es
-  precision highp float;
-  precision highp sampler2D;
-
+  frag: commonFrag + `
   in vec2 uv;
   uniform sampler2D particlesTex;
   uniform sampler2D screenTex;
@@ -197,42 +195,6 @@ const drawParticles = baseVertShader({
   uniform float time;
   out vec4 fragColor;
 
-  #define PI 3.1415
-
-  float random(in vec2 _st) {
-    return fract(sin(dot(_st.xy,
-                         vec2(12.9898,78.233)))*
-           43758.5453123);
-  }
-  // Based on Morgan McGuire @morgan3d
-  // https://www.shadertoy.com/view/4dS3Wd
-  float noise(in vec2 _st) {
-    vec2 i = floor(_st);
-    vec2 f = fract(_st);
-
-    // Four corners in 2D of a tile
-    float a = random(i);
-    float b = random(i + vec2(1.0, 0.0));
-    float c = random(i + vec2(0.0, 1.0));
-    float d = random(i + vec2(1.0, 1.0));
-
-    vec2 u = f * f * (3.0 - 2.0 * f);
-
-    return mix(a, b, u.x) +
-            (c - a)* u.y * (1.0 - u.x) +
-            (d - b) * u.x * u.y;
-  }
-  vec3 hsv2rgb(vec3 c) {
-    // Íñigo Quílez
-    // https://www.shadertoy.com/view/MsS3Wc
-    vec3 rgb = clamp(abs(mod(c.x*6.+vec3(0.,4.,2.),6.)-3.)-1.,0.,1.);
-    rgb = rgb * rgb * (3. - 2. * rgb);
-    return c.z * mix(vec3(1.), rgb, c.y);
-  }
-  vec2 rotate2D(vec2 _st, float _angle) {
-      return mat2(cos(_angle), -sin(_angle),
-                  sin(_angle), cos(_angle)) * _st;
-  }
   float dist2Line(vec2 a, vec2 b, vec2 p) {
     p -= a, b -= a;
     float h = clamp(dot(p, b) / dot(b, b), 0., 1.);
@@ -248,7 +210,7 @@ const drawParticles = baseVertShader({
       return -sqrt(d.x)*sign(d.y);
   }
   float cell(in vec2 uv) {
-    uv = rotate2D(uv, -PI*.5);
+    uv = rotate(uv, -PI*.5);
     return 1. - sign(sdTriangleIsosceles(uv - vec2(0., .5), vec2(.15, -.75)));
   }
   void main() {
@@ -261,11 +223,9 @@ const drawParticles = baseVertShader({
         clr += hsv2rgb(vec3(i/numParticles, 1., 1.));
     }
 
-    float f = noise(uv*5.);
-    // TODO: figure out why the angle is negated vs bufferA.
-    vec2 velocity = rotate2D(fract(uv*64.) - .5, f * PI * 2.);
+    vec2 velocity = velocityAtPoint(uv, fract(uv*64.) - .5, 1.0);
     float c = cell(velocity);
-    clr += hsv2rgb(vec3(c* (f > .25 && f < .75 ? .1 : .4), 1., c));
+    clr += vec3(c);
 
     fragColor = vec4(clr, 1.);
     // fragColor = vec4(clr + texture(screenTex, uv).rgb * .98, 1.);
