@@ -101,13 +101,6 @@ const bufferA = regl({
   uniform float time;
 
 #define PI 3.1415
-#define CELL_COUNT 16.
-#define SPEED 2.
-#define TIME (iTime * SPEED)
-
-#define PARTICLES_COUNT 64.
-#define MAX_PARTICLE_Y floor(PARTICLES_COUNT/480.)
-#define PIX (uv.y * 480. + uv.x)
 
   float random (in vec2 _st) {
     return fract(sin(dot(_st.xy,
@@ -136,7 +129,7 @@ const bufferA = regl({
   
   float turb( vec2 U, float t )
   { 	float f = 0., q=1., s=0.;
-    
+
       float m = 2.; 
    // mat2 m = mat2( 1.6,  1.2, -1.2,  1.6 );
       for (int i=0; i<2; i++) {
@@ -147,13 +140,13 @@ const bufferA = regl({
       }
       return f/s; 
   }
-  vec2 rotate2D (vec2 _st, float _angle) {
+  vec2 rotate2D(vec2 _st, float _angle) {
       return mat2(cos(_angle), -sin(_angle),
                   sin(_angle), cos(_angle)) * _st;
   }
-  vec2 randomOnEdge(vec2 uv, vec2 MAX){
+  vec2 randomPoint(vec2 uv) {
     float x = noise(uv);
-    float y = noise(uv*.25 + .25);
+    float y = noise(vec2(uv.x, uv.y + .5));
     return vec2(x, y);
   }
   vec3 hsv2rgb(vec3 c) {
@@ -164,15 +157,12 @@ const bufferA = regl({
     return c.z * mix(vec3(1.), rgb, c.y);
   }
 
-  void checkForBounds(float pos, inout vec2 ptnt, inout vec2 prevPtnt){
-    if(ptnt.x < 0. || ptnt.x > 1. || ptnt.y < 0. || ptnt.y > 1.)
-          prevPtnt = ptnt = randomOnEdge(vec2(pos, 0.), vec2(1.));
+  void checkForBounds(inout vec2 pos, inout vec2 newPos){
+    if (newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.)
+      newPos = pos = randomPoint(vec2(ijf.x, 0.));
   }
 
   void main() {
-    float partIndex = ijf.x;
-    // if (partIndex <= PARTICLES_COUNT)
-    //     return;
     vec2 pos = texelFetch(particlesTex, ivec2(ijf), 0).zw;
 
     float f = noise(pos*5.);
@@ -180,7 +170,7 @@ const bufferA = regl({
     vec2 velocity = rotate2D(vec2(1., 0.), -f * PI * 2.);
 
     vec2 newPos = pos + velocity * .01;
-    checkForBounds(partIndex, newPos, pos);
+    checkForBounds(pos, newPos);
     fragColor = vec4(pos, newPos);
   }`,
 
@@ -209,14 +199,14 @@ const drawParticles = baseVertShader({
 
   #define PI 3.1415
 
-  float random (in vec2 _st) {
+  float random(in vec2 _st) {
     return fract(sin(dot(_st.xy,
                          vec2(12.9898,78.233)))*
            43758.5453123);
   }
   // Based on Morgan McGuire @morgan3d
   // https://www.shadertoy.com/view/4dS3Wd
-  float noise (in vec2 _st) {
+  float noise(in vec2 _st) {
     vec2 i = floor(_st);
     vec2 f = fract(_st);
 
@@ -239,7 +229,7 @@ const drawParticles = baseVertShader({
     rgb = rgb * rgb * (3. - 2. * rgb);
     return c.z * mix(vec3(1.), rgb, c.y);
   }
-  vec2 rotate2D (vec2 _st, float _angle) {
+  vec2 rotate2D(vec2 _st, float _angle) {
       return mat2(cos(_angle), -sin(_angle),
                   sin(_angle), cos(_angle)) * _st;
   }
