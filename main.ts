@@ -33,11 +33,11 @@ function initFramebuffers() {
     height: 1,
   });
 
-  // particlesFBO.src.color[0].subimage({ // position
-  //   width: config.numParticles,
-  //   height: 1,
-  //   data: Array.from({length: config.numParticles}, (_, i) => [0,0,0,0]),
-  // });
+  particlesFBO.src.color[0].subimage({ // position
+    width: config.numParticles,
+    height: 1,
+    data: Array.from({length: config.numParticles}, (_, i) => [0,0,Math.random(),Math.random()]),
+  });
 }
 
 function createFBO(count, props) {
@@ -204,13 +204,12 @@ const drawParticles = baseVertShader({
     vec3 clr = vec3(0.);
     for (float i = 0.; i < numParticles; i++) {
       vec4 pos = texelFetch(particlesTex, ivec2(i, 0), 0);
-      float p = 1. - smoothstep(.0002, .0005, dist2Line(pos.xy, pos.zw, uv));
-      if (p > 0.)
-        clr += hsv2rgb(vec3(.3+.5*i/numParticles, 1., 1.));
+      float p = 1. - smoothstep(.0002, .0015, dist2Line(pos.xy, pos.zw, uv));
+      clr += p*hsv2rgb(vec3(.3+.5*i/numParticles, 1., 1.));
     }
 
     // fragColor = vec4(clr, 1.);
-    fragColor = vec4(clr + texture(screenTex, uv).rgb * .95, 1.);
+    fragColor = vec4(clr + texture(screenTex, uv).rgb * .97, 1.);
   }`,
 
   uniforms: {
@@ -273,5 +272,5 @@ regl.frame(function(context) {
   drawParticles({screen: screenFBO.src, framebuffer: screenFBO.dst});
   screenFBO.swap();
 
-  blit({screen: screenFBO.src, drawFlowField: true});
+  blit({screen: screenFBO.src, drawFlowField: false});
 });
