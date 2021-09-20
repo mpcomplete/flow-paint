@@ -1,7 +1,7 @@
 import * as Regl from "regl"
 import * as Webgl2 from "./regl-webgl2-compat.js"
 
-const regl = Webgl2.overrideContextType(() => Regl({extensions: ['WEBGL_draw_buffers', 'OES_texture_float', 'OES_texture_float_linear', 'OES_texture_half_float', 'ANGLE_instanced_arrays']}));
+const regl = Webgl2.overrideContextType(() => Regl({canvas: "#regl-canvas", extensions: ['WEBGL_draw_buffers', 'OES_texture_float', 'OES_texture_float_linear', 'OES_texture_half_float', 'ANGLE_instanced_arrays']}));
 
 var config = {
   numParticles: 900,
@@ -12,8 +12,9 @@ window.onload = function() {
 
 let screenFBO;
 let particlesFBO;
+let screenCanvas : HTMLCanvasElement;
 function initFramebuffers() {
-  let canvas = document.getElementsByTagName("canvas")[0];
+  let canvas = document.getElementsByTagName('canvas')[0];
   screenFBO = createDoubleFBO(1, {
     type: 'half float',
     format: 'rgba',
@@ -23,6 +24,12 @@ function initFramebuffers() {
     width: canvas.width,
     height: canvas.height,
   });
+  screenCanvas = document.getElementById('screen') as HTMLCanvasElement;
+  if (screenCanvas) {
+    console.log(screenCanvas);
+    screenCanvas.width = window.innerWidth;
+    screenCanvas.height = window.  innerHeight;
+  }
 
   // Holds the particle positions. particles[i, 0].xyzw = {lastPosX, lastPosY, posX, posY}
   particlesFBO = createDoubleFBO(1, {
@@ -57,6 +64,30 @@ function createDoubleFBO(count, props) {
       [this.src, this.dst] = [this.dst, this.src];
     }
   }
+}
+
+function HSVtoRGB(h, s, v) {
+  let r, g, b, i, f, p, q, t;
+  i = Math.floor(h * 6);
+  f = h * 6 - i;
+  p = v * (1 - s);
+  q = v * (1 - f * s);
+  t = v * (1 - (1 - f) * s);
+
+  switch (i%6) {
+    case 0: r=v, g=t, b=p; break;
+    case 1: r=q, g=v, b=p; break;
+    case 2: r=p, g=v, b=t; break;
+    case 3: r=p, g=q, b=v; break;
+    case 4: r=t, g=p, b=v; break;
+    case 5: r=v, g=p, b=q; break;
+  }
+
+  return [
+    r,
+    g,
+    b
+  ];
 }
 
 const baseVertShader = (opts) => regl(Object.assign(opts, {
@@ -264,13 +295,35 @@ regl.frame(function(context) {
     return;
 
   regl.clear({color: [0, 0, 0, 1]});
-  regl.clear({color: [0, 0, 0, 1], framebuffer: screenFBO.dst});
+  // regl.clear({color: [0, 0, 0, 1], framebuffer: screenFBO.dst});
 
   updateParticles();
   particlesFBO.swap();
 
-  drawParticles({screen: screenFBO.src, framebuffer: screenFBO.dst});
-  screenFBO.swap();
+  regl({framebuffer: particlesFBO.dst})(() => {
+    let pixels = regl.read() as Float32Array;
+    let ctx = screenCanvas.getContext('2d');
+    if (!ctx || context.tick < 4) return;
+    // ctx.clearRect(0, 0, screenCanvas.width, screenCanvas.height);
+    for (let i = 0; i < pixels.length; i += 4) {
+      let [ox, oy] = [pixels[i], pixels[i+1]];
+      let [px, py] = [pixels[i+2], pixels[i+3]];
+      let hue = 160 + 120 * i/config.numParticles/4;
+      ctx.strokeStyle = `hsl(${hue}, 100%, 50%)`;
+      ctx.fillStyle = 'white';
+      // ctx.fillRect(px * screenCanvas.width, py * screenCanvas.height, 1, 1);
+      ctx.beginPath();
+      ctx.moveTo(ox * screenCanvas.width, oy * screenCanvas.height);
+      // ctx.moveTo(0, 0);
+      ctx.lineTo(px * screenCanvas.width, py * screenCanvas.height);
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  });
 
-  blit({screen: screenFBO.src, drawFlowField: false});
+  // drawParticles({screen: screenFBO.src, framebuffer: screenFBO.dst});
+  // screenFBO.swap();
+
+  // blit({screen: screenFBO.src, drawFlowField: false});
 });
+
