@@ -304,17 +304,14 @@ regl.frame(function(context) {
     let pixels = regl.read() as Float32Array;
     let ctx = screenCanvas.getContext('2d');
     if (!ctx || context.tick < 4) return;
-    // ctx.clearRect(0, 0, screenCanvas.width, screenCanvas.height);
     for (let i = 0; i < pixels.length; i += 4) {
       let [ox, oy] = [pixels[i], pixels[i+1]];
       let [px, py] = [pixels[i+2], pixels[i+3]];
       let hue = 160 + 120 * i/config.numParticles/4;
       ctx.strokeStyle = `hsl(${hue}, 100%, 50%)`;
       ctx.fillStyle = 'white';
-      // ctx.fillRect(px * screenCanvas.width, py * screenCanvas.height, 1, 1);
       ctx.beginPath();
       ctx.moveTo(ox * screenCanvas.width, oy * screenCanvas.height);
-      // ctx.moveTo(0, 0);
       ctx.lineTo(px * screenCanvas.width, py * screenCanvas.height);
       ctx.lineWidth = 1;
       ctx.stroke();
