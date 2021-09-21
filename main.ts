@@ -4,7 +4,7 @@ import * as Webgl2 from "./regl-webgl2-compat.js"
 const regl = Webgl2.overrideContextType(() => Regl({canvas: "#regl-canvas", extensions: ['WEBGL_draw_buffers', 'OES_texture_float', 'OES_texture_float_linear', 'OES_texture_half_float', 'ANGLE_instanced_arrays']}));
 
 var config = {
-  numParticles: 900,
+  numParticles: 9000,
 };
 window.onload = function() {
   initFramebuffers();
@@ -12,7 +12,7 @@ window.onload = function() {
 
 let screenFBO;
 let particlesFBO;
-let screenCanvas : HTMLCanvasElement;
+let screenCanvas;
 function initFramebuffers() {
   let canvas = document.getElementsByTagName('canvas')[0];
   screenFBO = createDoubleFBO(1, {
@@ -24,11 +24,13 @@ function initFramebuffers() {
     width: canvas.width,
     height: canvas.height,
   });
-  screenCanvas = document.getElementById('screen') as HTMLCanvasElement;
-  if (screenCanvas) {
-    console.log(screenCanvas);
-    screenCanvas.width = window.innerWidth;
-    screenCanvas.height = window.  innerHeight;
+  screenCanvas = {
+    dst: document.getElementById('screen') as HTMLCanvasElement,
+    src: document.createElement('canvas') as HTMLCanvasElement,
+  }
+  if (screenCanvas.dst) {
+    screenCanvas.src.width = screenCanvas.dst.width = window.innerWidth;
+    screenCanvas.src.height = screenCanvas.dst.height = window.innerHeight;
   }
 
   // Holds the particle positions. particles[i, 0].xyzw = {lastPosX, lastPosY, posX, posY}
@@ -64,30 +66,6 @@ function createDoubleFBO(count, props) {
       [this.src, this.dst] = [this.dst, this.src];
     }
   }
-}
-
-function HSVtoRGB(h, s, v) {
-  let r, g, b, i, f, p, q, t;
-  i = Math.floor(h * 6);
-  f = h * 6 - i;
-  p = v * (1 - s);
-  q = v * (1 - f * s);
-  t = v * (1 - (1 - f) * s);
-
-  switch (i%6) {
-    case 0: r=v, g=t, b=p; break;
-    case 1: r=q, g=v, b=p; break;
-    case 2: r=p, g=v, b=t; break;
-    case 3: r=p, g=q, b=v; break;
-    case 4: r=t, g=p, b=v; break;
-    case 5: r=v, g=p, b=q; break;
-  }
-
-  return [
-    r,
-    g,
-    b
-  ];
 }
 
 const baseVertShader = (opts) => regl(Object.assign(opts, {
@@ -295,27 +273,30 @@ regl.frame(function(context) {
     return;
 
   regl.clear({color: [0, 0, 0, 1]});
-  // regl.clear({color: [0, 0, 0, 1], framebuffer: screenFBO.dst});
 
   updateParticles();
   particlesFBO.swap();
 
   regl({framebuffer: particlesFBO.dst})(() => {
     let pixels = regl.read() as Float32Array;
-    let ctx = screenCanvas.getContext('2d');
+    let ctx = screenCanvas.src.getContext('2d');
+    ctx.clearRect(0, 0, screenCanvas.dst.width, screenCanvas.dst.height);
     if (!ctx || context.tick < 4) return;
     for (let i = 0; i < pixels.length; i += 4) {
       let [ox, oy] = [pixels[i], pixels[i+1]];
       let [px, py] = [pixels[i+2], pixels[i+3]];
       let hue = 160 + 120 * i/config.numParticles/4;
       ctx.strokeStyle = `hsl(${hue}, 100%, 50%)`;
-      ctx.fillStyle = 'white';
       ctx.beginPath();
-      ctx.moveTo(ox * screenCanvas.width, oy * screenCanvas.height);
-      ctx.lineTo(px * screenCanvas.width, py * screenCanvas.height);
-      ctx.lineWidth = 1;
+      ctx.moveTo(ox * screenCanvas.src.width, oy * screenCanvas.src.height);
+      ctx.lineTo(px * screenCanvas.src.width, py * screenCanvas.src.height);
+      ctx.lineWidth = .1;
       ctx.stroke();
     }
+    let ctxDst = screenCanvas.dst.getContext('2d') as CanvasRenderingContext2D;
+    ctxDst.fillStyle = 'rgba(0, 0, 0, 1.5%)';
+    ctxDst.fillRect(0, 0, screenCanvas.dst.width, screenCanvas.dst.height);
+    ctxDst.drawImage(screenCanvas.src, 0, 0);
   });
 
   // drawParticles({screen: screenFBO.src, framebuffer: screenFBO.dst});
