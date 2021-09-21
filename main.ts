@@ -10,28 +10,16 @@ window.onload = function() {
   initFramebuffers();
 };
 
-let screenFBO;
 let particlesFBO;
 let screenCanvas;
 function initFramebuffers() {
-  let canvas = document.getElementsByTagName('canvas')[0];
-  screenFBO = createDoubleFBO(1, {
-    type: 'half float',
-    format: 'rgba',
-    wrap: 'clamp',
-    min: 'linear',
-    mag: 'linear',
-    width: canvas.width,
-    height: canvas.height,
-  });
+  let reglCanvas = document.getElementById('regl-canvas') as HTMLCanvasElement;
   screenCanvas = {
     dst: document.getElementById('screen') as HTMLCanvasElement,
     src: document.createElement('canvas') as HTMLCanvasElement,
   }
-  if (screenCanvas.dst) {
-    screenCanvas.src.width = screenCanvas.dst.width = window.innerWidth;
-    screenCanvas.src.height = screenCanvas.dst.height = window.innerHeight;
-  }
+  reglCanvas.width = screenCanvas.src.width = screenCanvas.dst.width = window.innerWidth;
+  reglCanvas.height = screenCanvas.src.height = screenCanvas.dst.height = window.innerHeight;
 
   // Holds the particle positions. particles[i, 0].xyzw = {lastPosX, lastPosY, posX, posY}
   particlesFBO = createDoubleFBO(1, {
@@ -147,6 +135,7 @@ vec3 hsv2rgb(vec3 c) {
 // TODO: figure out why the angle is negated in updateParticles vs drawParticles.
 vec2 velocityAtPoint(vec2 p, vec2 uv, float t, float signHACK) {
   float f = noise(vec3(p*5., t*.4));
+  // f = exp(p.x*.2 + p.y*.5);
   return rotate(uv, f * PI * 2. * signHACK);
 }`;
 
@@ -177,7 +166,7 @@ const updateParticles = regl({
 
   void main() {
     vec2 pos = texelFetch(particlesTex, ivec2(ijf), 0).zw;
-    vec2 velocity = velocityAtPoint(pos, vec2(1., 0.), time, -1.);
+    vec2 velocity = velocityAtPoint(pos, vec2(1., 0.), time, 1.);
 
     vec2 newPos = pos + velocity * .01;
     checkForBounds(pos, newPos);
@@ -232,7 +221,6 @@ const drawParticles = baseVertShader({
 const blit = baseVertShader({
   frag: commonFrag + `
   in vec2 uv;
-  uniform sampler2D screenTex;
   uniform bool drawFlowField;
   uniform float time;
   out vec4 fragColor;
@@ -252,24 +240,25 @@ const blit = baseVertShader({
     return 1. - sign(sdTriangleIsosceles(uv - vec2(0., .5), vec2(.05, -.4)));
   }
   void main() {
-    fragColor = vec4(texture(screenTex, uv).rgb, 1.);
+    fragColor = vec4(0., 0., 0., 1.);
+    // fragColor = vec4(texture(screenTex, uv).rgb, 1.);
 
     if (drawFlowField) {
-      vec2 velocity = velocityAtPoint(uv, fract(uv*64.) - .5, time, 1.0);
+      vec2 uv2 = vec2(uv.x, 1. - uv.y);
+      vec2 velocity = velocityAtPoint(uv2, fract(uv2*64.) - .5, time, -1.0);
       float c = cell(velocity);
-      fragColor.rgb += vec3(c);
+      fragColor.rgb = vec3(c);
     }
   }`,
 
   uniforms: {
-    screenTex: regl.prop('screen'),
     drawFlowField: regl.prop('drawFlowField'),
     time: regl.context('time'),
   },
 });
 
 regl.frame(function(context) {
-  if (!screenFBO)
+  if (!particlesFBO)
     return;
 
   regl.clear({color: [0, 0, 0, 1]});
@@ -277,10 +266,12 @@ regl.frame(function(context) {
   updateParticles();
   particlesFBO.swap();
 
+  // blit({drawFlowField: true});
+
   regl({framebuffer: particlesFBO.dst})(() => {
     let pixels = regl.read() as Float32Array;
     let ctx = screenCanvas.src.getContext('2d');
-    ctx.clearRect(0, 0, screenCanvas.dst.width, screenCanvas.dst.height);
+    ctx.clearRect(0, 0, screenCanvas.src.width, screenCanvas.src.height);
     if (!ctx || context.tick < 4) return;
     for (let i = 0; i < pixels.length; i += 4) {
       let [ox, oy] = [pixels[i], pixels[i+1]];
@@ -296,12 +287,9 @@ regl.frame(function(context) {
     let ctxDst = screenCanvas.dst.getContext('2d') as CanvasRenderingContext2D;
     ctxDst.fillStyle = 'rgba(0, 0, 0, 1.5%)';
     ctxDst.fillRect(0, 0, screenCanvas.dst.width, screenCanvas.dst.height);
+    // ctxDst.drawImage(document.getElementById('regl-canvas') as HTMLCanvasElement, 0, 0);
+
     ctxDst.drawImage(screenCanvas.src, 0, 0);
   });
-
-  // drawParticles({screen: screenFBO.src, framebuffer: screenFBO.dst});
-  // screenFBO.swap();
-
-  // blit({screen: screenFBO.src, drawFlowField: false});
 });
 
