@@ -66,7 +66,7 @@ module.exports = {
     gl.texImage2D = function(target, miplevel, iformat, a, typeFor6, c, d, typeFor9, f) {
       if (arguments.length == 6) {
         var ifmt = webgl2.getInternalFormat(gl, iformat, typeFor6);
-        origTexImage.apply(gl, [target, miplevel, ifmt, a, webgl.getTextureType(gl, typeFor6), c]);
+        origTexImage.apply(gl, [target, miplevel, ifmt, a, webgl2.getTextureType(gl, typeFor6), c]);
       } else { // arguments.length == 9
         var ifmt = webgl2.getInternalFormat(gl, iformat, typeFor9);
         origTexImage.apply(gl, [target, miplevel, ifmt, a, typeFor6, c, d, webgl2.getTextureType(gl, typeFor9), f]);
