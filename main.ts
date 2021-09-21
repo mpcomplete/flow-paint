@@ -102,9 +102,9 @@ vec2 rotate(vec2 _st, float _angle) {
     return mat2(cos(_angle), -sin(_angle),
                 sin(_angle), cos(_angle)) * _st;
 }
-vec2 randomPoint(vec2 uv) {
-  float x = noise(vec3(uv, 0.));
-  float y = noise(vec3(uv, 5.));
+vec2 randomPoint(vec2 uv, float t) {
+  float x = noise(vec3(uv*3., t));
+  float y = noise(vec3(uv*5., t+5.));
   return vec2(x, y);
 }
 vec3 hsv2rgb(vec3 c) {
@@ -122,41 +122,43 @@ vec2 velocityAtPoint(vec2 p, vec2 uv, float t, float signHACK) {
   return rotate(uv, f * PI * 2. * signHACK);
 }`;
 
-const updateParticles = regl({
+const baseVertShader = (opts) => regl(Object.assign({
   vert: `#version 300 es
   precision highp float;
   in vec2 position;
-  out vec2 ijf;
-  uniform sampler2D particlesTex;
+  out vec2 uv;
+
   void main () {
-    ijf = vec2(textureSize(particlesTex, 0)) * (position * .5 + .5);
-    gl_Position = vec4(position, 0.0, 1.0);
-  }`,
-
-  frag: commonFrag + `
-  in vec2 ijf;
-  out vec4 fragColor;
-  uniform sampler2D particlesTex;
-  uniform float time;
-
-  void checkForBounds(inout vec2 pos, inout vec2 newPos){
-    if (newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.)
-      newPos = pos = randomPoint(vec2(ijf.x, 0.));
-  }
-
-  void main() {
-    vec2 pos = texelFetch(particlesTex, ivec2(ijf), 0).zw;
-    vec2 velocity = velocityAtPoint(pos, vec2(1., 0.), time, 1.);
-
-    vec2 newPos = pos + velocity * .01;
-    checkForBounds(pos, newPos);
-    fragColor = vec4(pos, newPos);
+    uv = position * 0.5 + 0.5;
+    // HTML5 canvas has y=0 at the top, GL at the bottom.
+    gl_Position = vec4(position.x, -position.y, 0.0, 1.0);
   }`,
 
   attributes: {
     position: [[-1, -1], [-1, 1], [1, 1], [-1, -1], [1, 1], [1, -1]]
   },
   count: 6,
+  framebuffer: regl.prop('framebuffer'),
+}, opts));
+
+const updateParticles = baseVertShader({
+  frag: commonFrag + `
+  out vec4 fragColor;
+  uniform sampler2D particlesTex;
+  uniform float time;
+
+  void checkForBounds(inout vec2 pos, inout vec2 newPos){
+    if (newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.)
+      newPos = pos = randomPoint(gl_FragCoord.xy, time);
+  }
+  void main() {
+    vec2 pos = texelFetch(particlesTex, ivec2(gl_FragCoord.xy), 0).zw;
+    vec2 velocity = velocityAtPoint(pos, vec2(1., 0.), time, 1.);
+
+    vec2 newPos = pos + velocity * .01;
+    checkForBounds(pos, newPos);
+    fragColor = vec4(pos, newPos);
+  }`,
   framebuffer: () => particlesFBO.dst,
   uniforms: {
     particlesTex: () => particlesFBO.src,
@@ -164,18 +166,7 @@ const updateParticles = regl({
   },
 });
 
-const drawFlowField = regl({
-  vert: `#version 300 es
-  precision highp float;
-  in vec2 position;
-  out vec2 uv;
-  uniform sampler2D particles;
-  void main () {
-    // HTML5 canvas has y=0 at the top, GL at the bottom.
-    uv = vec2(position.x, -position.y) * 0.5 + 0.5;
-    gl_Position = vec4(position, 0.0, 1.0);
-  }`,
-
+const drawFlowField = baseVertShader({
   frag: commonFrag + `
   in vec2 uv;
   uniform float time;
@@ -200,12 +191,6 @@ const drawFlowField = regl({
     float c = cell(velocity);
     fragColor.rgb = vec3(c);
   }`,
-
-  attributes: {
-    position: [[-1, -1], [-1, 1], [1, 1], [-1, -1], [1, 1], [1, -1]]
-  },
-  count: 6,
-  framebuffer: regl.prop("framebuffer"),
   uniforms: {
     time: regl.context('time'),
   },
@@ -220,7 +205,7 @@ regl.frame(function(context) {
   updateParticles();
   particlesFBO.swap();
 
-  // drawFlowField({drawFlowField: true});
+  drawFlowField({});
 
   regl({framebuffer: particlesFBO.dst})(() => {
     let pixels = regl.read() as Float32Array;
@@ -240,7 +225,7 @@ regl.frame(function(context) {
     }
     let ctxDst = screenCanvas.dst.getContext('2d') as CanvasRenderingContext2D;
     ctxDst.fillStyle = 'rgba(0, 0, 0, 1.0%)';
-    // ctxDst.fillRect(0, 0, screenCanvas.dst.width, screenCanvas.dst.height);
+    ctxDst.fillRect(0, 0, screenCanvas.dst.width, screenCanvas.dst.height);
     // ctxDst.drawImage(document.getElementById('regl-canvas') as HTMLCanvasElement, 0, 0);
 
     ctxDst.drawImage(screenCanvas.src, 0, 0);
