@@ -56,24 +56,6 @@ function createDoubleFBO(count, props) {
   }
 }
 
-const baseVertShader = (opts) => regl(Object.assign(opts, {
-  vert: `#version 300 es
-  precision highp float;
-  in vec2 position;
-  out vec2 uv;
-  uniform sampler2D particles;
-  void main () {
-    uv = position * 0.5 + 0.5;
-    gl_Position = vec4(position, 0.0, 1.0);
-  }`,
-
-  attributes: {
-    position: [[-1, -1], [-1, 1], [1, 1], [-1, -1], [1, 1], [1, -1]]
-  },
-  count: 6,
-  framebuffer: regl.prop("framebuffer"),
-}));
-
 const commonFrag = `#version 300 es
 precision highp float;
 precision highp sampler2D;
@@ -132,10 +114,11 @@ vec3 hsv2rgb(vec3 c) {
   rgb = rgb * rgb * (3. - 2. * rgb);
   return c.z * mix(vec3(1.), rgb, c.y);
 }
-// TODO: figure out why the angle is negated in updateParticles vs drawParticles.
+// TODO: figure out why the angle is negated in updateParticles vs drawFlowField.
 vec2 velocityAtPoint(vec2 p, vec2 uv, float t, float signHACK) {
-  float f = noise(vec3(p*5., t*.4));
-  // f = exp(p.x*.2 + p.y*.5);
+  // float f = noise(vec3(p*5., t*.4));
+  float f = turb(p*5., t*.1)*1.5;
+  // f += .3*sin(p.x*.2 + p.y*.5);
   return rotate(uv, f * PI * 2. * signHACK);
 }`;
 
@@ -143,17 +126,14 @@ const updateParticles = regl({
   vert: `#version 300 es
   precision highp float;
   in vec2 position;
-  out vec2 uv;
   out vec2 ijf;
   uniform sampler2D particlesTex;
   void main () {
     ijf = vec2(textureSize(particlesTex, 0)) * (position * .5 + .5);
-    uv = position * 0.5 + 0.5;
     gl_Position = vec4(position, 0.0, 1.0);
   }`,
 
   frag: commonFrag + `
-  in vec2 uv;
   in vec2 ijf;
   out vec4 fragColor;
   uniform sampler2D particlesTex;
@@ -184,44 +164,20 @@ const updateParticles = regl({
   },
 });
 
-const drawParticles = baseVertShader({
-  frag: commonFrag + `
-  in vec2 uv;
-  uniform sampler2D particlesTex;
-  uniform sampler2D screenTex;
-  uniform float numParticles;
-  uniform float time;
-  out vec4 fragColor;
-
-  float dist2Line(vec2 a, vec2 b, vec2 p) {
-    p -= a, b -= a;
-    float h = clamp(dot(p, b) / dot(b, b), 0., 1.);
-    return length( p - b * h );
-  }
-  void main() {
-    vec3 clr = vec3(0.);
-    for (float i = 0.; i < numParticles; i++) {
-      vec4 pos = texelFetch(particlesTex, ivec2(i, 0), 0);
-      float p = 1. - smoothstep(.0002, .0015, dist2Line(pos.xy, pos.zw, uv));
-      clr += p*hsv2rgb(vec3(.3+.5*i/numParticles, 1., 1.));
-    }
-
-    // fragColor = vec4(clr, 1.);
-    fragColor = vec4(clr + texture(screenTex, uv).rgb * .97, 1.);
+const drawFlowField = regl({
+  vert: `#version 300 es
+  precision highp float;
+  in vec2 position;
+  out vec2 uv;
+  uniform sampler2D particles;
+  void main () {
+    // HTML5 canvas has y=0 at the top, GL at the bottom.
+    uv = vec2(position.x, -position.y) * 0.5 + 0.5;
+    gl_Position = vec4(position, 0.0, 1.0);
   }`,
 
-  uniforms: {
-    screenTex: regl.prop('screen'),
-    particlesTex: () => particlesFBO.src,
-    numParticles: () => config.numParticles,
-    time: regl.context('time'),
-  },
-});
-
-const blit = baseVertShader({
   frag: commonFrag + `
   in vec2 uv;
-  uniform bool drawFlowField;
   uniform float time;
   out vec4 fragColor;
 
@@ -240,19 +196,17 @@ const blit = baseVertShader({
     return 1. - sign(sdTriangleIsosceles(uv - vec2(0., .5), vec2(.05, -.4)));
   }
   void main() {
-    fragColor = vec4(0., 0., 0., 1.);
-    // fragColor = vec4(texture(screenTex, uv).rgb, 1.);
-
-    if (drawFlowField) {
-      vec2 uv2 = vec2(uv.x, 1. - uv.y);
-      vec2 velocity = velocityAtPoint(uv2, fract(uv2*64.) - .5, time, -1.0);
-      float c = cell(velocity);
-      fragColor.rgb = vec3(c);
-    }
+    vec2 velocity = velocityAtPoint(uv, fract(uv*64.) - .5, time, -1.0);
+    float c = cell(velocity);
+    fragColor.rgb = vec3(c);
   }`,
 
+  attributes: {
+    position: [[-1, -1], [-1, 1], [1, 1], [-1, -1], [1, 1], [1, -1]]
+  },
+  count: 6,
+  framebuffer: regl.prop("framebuffer"),
   uniforms: {
-    drawFlowField: regl.prop('drawFlowField'),
     time: regl.context('time'),
   },
 });
@@ -266,7 +220,7 @@ regl.frame(function(context) {
   updateParticles();
   particlesFBO.swap();
 
-  // blit({drawFlowField: true});
+  // drawFlowField({drawFlowField: true});
 
   regl({framebuffer: particlesFBO.dst})(() => {
     let pixels = regl.read() as Float32Array;
@@ -285,8 +239,8 @@ regl.frame(function(context) {
       ctx.stroke();
     }
     let ctxDst = screenCanvas.dst.getContext('2d') as CanvasRenderingContext2D;
-    ctxDst.fillStyle = 'rgba(0, 0, 0, 1.5%)';
-    ctxDst.fillRect(0, 0, screenCanvas.dst.width, screenCanvas.dst.height);
+    ctxDst.fillStyle = 'rgba(0, 0, 0, 1.0%)';
+    // ctxDst.fillRect(0, 0, screenCanvas.dst.width, screenCanvas.dst.height);
     // ctxDst.drawImage(document.getElementById('regl-canvas') as HTMLCanvasElement, 0, 0);
 
     ctxDst.drawImage(screenCanvas.src, 0, 0);
