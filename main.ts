@@ -10,6 +10,7 @@ type Point = [number, number];
 
 var config = {
   numParticles: 9000,
+  lineWidth: .5,
 };
 window.onload = function() {
   initFramebuffers();
@@ -17,7 +18,8 @@ window.onload = function() {
 
 let particles: any = {
   fbo: null,
-  hue: []
+  hue: [],
+  birth: [],
 };
 let screenCanvas;
 let baseImage, baseImageShader, baseImageData;
@@ -56,7 +58,15 @@ function initFramebuffers() {
     data: Array.from({length: config.numParticles}, (_, i) => [-1,0,-1,0]),
   });
 
-  particles.hue = Array.from({length: config.numParticles});//, (_, i) => 160 + 120 * i/config.numParticles);
+  particles.hue = Array.from({length: config.numParticles});
+  particles.birth = new Float32Array(config.numParticles*4);
+  particles.birthBuffer = regl.texture({
+    type: 'float32',
+    format: 'rgba',
+    width: config.numParticles,
+    height: 1,
+    data: particles.birth,
+  });
 }
 
 function createFBO(count, props) {
@@ -78,18 +88,23 @@ function createDoubleFBO(count, props) {
   }
 }
 
-function initParticle(i: number, pos: Point) {
+function initParticle(i: number, pos: Point, time: number) {
   let scalePos = [Math.floor(pos[0]*screenCanvas.src.width), Math.floor(pos[1]*screenCanvas.src.height)];
   let bi = 4*(Math.floor(scalePos[1]*screenCanvas.src.width + scalePos[0]));
   particles.hue[i] = [baseImageData[bi]*255, baseImageData[bi+1]*255, baseImageData[bi+2]*255, baseImageData[bi+3]*100];
+  particles.birth[i*4] = time;
 }
 
 const commonFrag = `#version 300 es
 precision highp float;
 precision highp sampler2D;
 
-#define PI 3.1415
-
+float PI = 3.14159269369;
+float TAU = 6.28318530718;
+float PHI = 1.61803398874989484820459;
+float goldNoise(in vec2 xy, in float seed){
+    return fract(tan(distance(xy*PHI, xy)*seed)*xy.x);
+}
 vec4 mod289(vec4 x){return x - floor(x * (1.0 / 289.0)) * 289.0;}
 vec4 perm(vec4 x){return mod289(((x * 34.0) + 1.0) * x);}
 float noise(vec3 p){
@@ -131,8 +146,8 @@ vec2 rotate(vec2 _st, float _angle) {
                 sin(_angle), cos(_angle)) * _st;
 }
 vec2 randomPoint(vec2 uv, float t) {
-  float x = noise(vec3(uv*3., t));
-  float y = noise(vec3(uv*5., t+5.));
+  float x = goldNoise(uv*3., t);
+  float y = goldNoise(uv*5., t);
   return vec2(x, y);
 }
 vec3 hsv2rgb(vec3 c) {
@@ -144,9 +159,11 @@ vec3 hsv2rgb(vec3 c) {
 }
 // TODO: figure out why the angle is negated in updateParticles vs drawFlowField.
 vec2 velocityAtPoint(vec2 p, vec2 uv, float t, float signHACK) {
+  t=0.;
   // float f = noise(vec3(p*5., t*.4));
-  float f = turb(p*5., t*.3)*1.5;
-  // f += .3*sin(p.x*.2 + p.y*.5);
+  // float f = turb(p*5., t*.3)*1.5;
+  float f = .3*sin(p.x*3.2 + p.y*4.5) + .5*sin(p.x*p.y*TAU);
+  // float f = noise(vec3(p*99.+99., p.x*p.y));
   return rotate(uv, f * PI * 2. * signHACK);
 }`;
 
@@ -173,33 +190,36 @@ const updateParticles = baseVertShader({
   frag: commonFrag + `
   out vec4 fragColor;
   uniform sampler2D particlesTex;
-  uniform float time;
+  uniform sampler2D birthTex;
+  uniform float iTime;
 
-  void checkForBounds(inout vec2 pos, inout vec2 newPos){
-    if (newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.) {
-      newPos = randomPoint(gl_FragCoord.xy, time);
+  void maybeReset(inout vec2 pos, inout vec2 newPos) {
+    float birth = texelFetch(birthTex, ivec2(gl_FragCoord.xy), 0).x;
+    if ((iTime - birth) > .2 + .1*goldNoise(gl_FragCoord.xy, 99.) || newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.) {
+      newPos = randomPoint(gl_FragCoord.xy, iTime);
       pos = vec2(-1, -1);  // Tells the main loop that this particle was reset.
     }
   }
   void main() {
     vec2 pos = texelFetch(particlesTex, ivec2(gl_FragCoord.xy), 0).zw;
-    vec2 velocity = velocityAtPoint(pos, vec2(1., 0.), time, 1.);
+    vec2 velocity = velocityAtPoint(pos, vec2(1., 0.), iTime, 1.);
 
     vec2 newPos = pos + velocity * .01;
-    checkForBounds(pos, newPos);
+    maybeReset(pos, newPos);
     fragColor = vec4(pos, newPos);
   }`,
   framebuffer: () => particles.fbo.dst,
   uniforms: {
     particlesTex: () => particles.fbo.src,
-    time: regl.context('time'),
+    birthTex: () => particles.birthBuffer,
+    iTime: regl.context('time'),
   },
 });
 
 const drawFlowField = baseVertShader({
   frag: commonFrag + `
   in vec2 uv;
-  uniform float time;
+  uniform float iTime;
   out vec4 fragColor;
 
   // p is base, q is width,height
@@ -217,12 +237,12 @@ const drawFlowField = baseVertShader({
     return 1. - sign(sdTriangleIsosceles(uv - vec2(0., .5), vec2(.05, -.4)));
   }
   void main() {
-    vec2 velocity = velocityAtPoint(uv, fract(uv*64.) - .5, time, -1.0);
+    vec2 velocity = velocityAtPoint(uv, fract(uv*64.) - .5, iTime, -1.0);
     float c = cell(velocity);
     fragColor.rgb = vec3(c);
   }`,
   uniforms: {
-    time: regl.context('time'),
+    iTime: regl.context('time'),
   },
 });
 
@@ -237,7 +257,6 @@ regl.frame(function(context) {
     regl({framebuffer: baseImage})(() => {
       baseImageShader({framebuffer: baseImage});
       baseImageData = regl.read() as Float32Array;
-      console.log('got base image', baseImageData.length, screenCanvas.src.width, screenCanvas.src.height);
     });
   }
 
@@ -249,7 +268,7 @@ regl.frame(function(context) {
   drawFlowField({});
 
   regl({framebuffer: particles.fbo.dst})(() => {
-    let pixels = regl.read() as Float32Array;
+    let pixels = regl.read() as Float32Array; // TODO: reuse buffer
     let ctx = screenCanvas.src.getContext('2d');
     ctx.clearRect(0, 0, screenCanvas.src.width, screenCanvas.src.height);
     if (!ctx || context.tick < 4) return;
@@ -259,7 +278,7 @@ regl.frame(function(context) {
       if (px < 0)
         continue;
       if (ox < 0) {  // negative lastPos signals that this particle died
-        initParticle(Math.floor(i / 4), [px, py]);
+        initParticle(Math.floor(i / 4), [px, py], context.time);
         continue;
       }
       let rgba = particles.hue[Math.floor(i / 4)];
@@ -267,15 +286,21 @@ regl.frame(function(context) {
       ctx.beginPath();
       ctx.moveTo(ox * screenCanvas.src.width, oy * screenCanvas.src.height);
       ctx.lineTo(px * screenCanvas.src.width, py * screenCanvas.src.height);
-      ctx.lineWidth = .1;
+      ctx.lineWidth = config.lineWidth;
       ctx.stroke();
     }
     let ctxDst = screenCanvas.dst.getContext('2d') as CanvasRenderingContext2D;
-    ctxDst.fillStyle = 'rgba(0, 0, 0, 1.0%)';
-    ctxDst.fillRect(0, 0, screenCanvas.dst.width, screenCanvas.dst.height);
+    ctxDst.fillStyle = 'rgba(0, 0, 0, 1.5%)';
+    // ctxDst.fillRect(0, 0, screenCanvas.dst.width, screenCanvas.dst.height);
     // ctxDst.drawImage(document.getElementById('regl-canvas') as HTMLCanvasElement, 0, 0);
 
     ctxDst.drawImage(screenCanvas.src, 0, 0);
+  });
+
+  particles.birthBuffer.subimage({
+    width: config.numParticles,
+    height: 1,
+    data: particles.birth
   });
 });
 
