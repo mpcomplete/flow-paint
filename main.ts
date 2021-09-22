@@ -3,6 +3,8 @@ import * as Webgl2 from "./regl-webgl2-compat.js"
 
 const regl = Webgl2.overrideContextType(() => Regl({canvas: "#regl-canvas", extensions: ['WEBGL_draw_buffers', 'OES_texture_float', 'OES_texture_float_linear', 'OES_texture_half_float', 'ANGLE_instanced_arrays']}));
 
+type Point = [number, number];
+
 var config = {
   numParticles: 9000,
 };
@@ -10,7 +12,11 @@ window.onload = function() {
   initFramebuffers();
 };
 
-let particlesFBO;
+let particles: any = {
+  fbo: null,
+  hue: []
+};
+
 let screenCanvas;
 function initFramebuffers() {
   let reglCanvas = document.getElementById('regl-canvas') as HTMLCanvasElement;
@@ -22,7 +28,7 @@ function initFramebuffers() {
   reglCanvas.height = screenCanvas.src.height = screenCanvas.dst.height = window.innerHeight;
 
   // Holds the particle positions. particles[i, 0].xyzw = {lastPosX, lastPosY, posX, posY}
-  particlesFBO = createDoubleFBO(1, {
+  particles.fbo = createDoubleFBO(1, {
     type: 'float32',
     format: 'rgba',
     wrap: 'clamp',
@@ -30,11 +36,13 @@ function initFramebuffers() {
     height: 1,
   });
 
-  particlesFBO.src.color[0].subimage({ // position
+  particles.fbo.src.color[0].subimage({ // position
     width: config.numParticles,
     height: 1,
-    data: Array.from({length: config.numParticles}, (_, i) => [0,0,Math.random(),Math.random()]),
+    data: Array.from({length: config.numParticles}, (_, i) => [-1,0,0,0]),
   });
+
+  particles.hue = Array.from({length: config.numParticles});//, (_, i) => 160 + 120 * i/config.numParticles);
 }
 
 function createFBO(count, props) {
@@ -54,6 +62,10 @@ function createDoubleFBO(count, props) {
       [this.src, this.dst] = [this.dst, this.src];
     }
   }
+}
+
+function initParticle(i: number, pos: Point) {
+  particles.hue[i] = 80*(Math.sin(pos[0]*2*Math.PI)+1) + 60*(Math.cos(pos[1]*2*Math.PI)+1);
 }
 
 const commonFrag = `#version 300 es
@@ -117,7 +129,7 @@ vec3 hsv2rgb(vec3 c) {
 // TODO: figure out why the angle is negated in updateParticles vs drawFlowField.
 vec2 velocityAtPoint(vec2 p, vec2 uv, float t, float signHACK) {
   // float f = noise(vec3(p*5., t*.4));
-  float f = turb(p*5., t*.1)*1.5;
+  float f = turb(p*5., t*.3)*1.5;
   // f += .3*sin(p.x*.2 + p.y*.5);
   return rotate(uv, f * PI * 2. * signHACK);
 }`;
@@ -148,8 +160,10 @@ const updateParticles = baseVertShader({
   uniform float time;
 
   void checkForBounds(inout vec2 pos, inout vec2 newPos){
-    if (newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.)
-      newPos = pos = randomPoint(gl_FragCoord.xy, time);
+    if (newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.) {
+      newPos = randomPoint(gl_FragCoord.xy, time);
+      pos = vec2(-1, -1);  // Tells the main loop that this particle was reset.
+    }
   }
   void main() {
     vec2 pos = texelFetch(particlesTex, ivec2(gl_FragCoord.xy), 0).zw;
@@ -159,9 +173,9 @@ const updateParticles = baseVertShader({
     checkForBounds(pos, newPos);
     fragColor = vec4(pos, newPos);
   }`,
-  framebuffer: () => particlesFBO.dst,
+  framebuffer: () => particles.fbo.dst,
   uniforms: {
-    particlesTex: () => particlesFBO.src,
+    particlesTex: () => particles.fbo.src,
     time: regl.context('time'),
   },
 });
@@ -197,17 +211,17 @@ const drawFlowField = baseVertShader({
 });
 
 regl.frame(function(context) {
-  if (!particlesFBO)
+  if (!particles.fbo)
     return;
 
   regl.clear({color: [0, 0, 0, 1]});
 
   updateParticles();
-  particlesFBO.swap();
+  particles.fbo.swap();
 
   drawFlowField({});
 
-  regl({framebuffer: particlesFBO.dst})(() => {
+  regl({framebuffer: particles.fbo.dst})(() => {
     let pixels = regl.read() as Float32Array;
     let ctx = screenCanvas.src.getContext('2d');
     ctx.clearRect(0, 0, screenCanvas.src.width, screenCanvas.src.height);
@@ -215,7 +229,11 @@ regl.frame(function(context) {
     for (let i = 0; i < pixels.length; i += 4) {
       let [ox, oy] = [pixels[i], pixels[i+1]];
       let [px, py] = [pixels[i+2], pixels[i+3]];
-      let hue = 160 + 120 * i/config.numParticles/4;
+      if (ox < 0) {  // negative lastPos signals that this particle died
+        initParticle(Math.floor(i / 4), [px, py]);
+        continue;
+      }
+      let hue = particles.hue[Math.floor(i / 4)];
       ctx.strokeStyle = `hsl(${hue}, 100%, 50%)`;
       ctx.beginPath();
       ctx.moveTo(ox * screenCanvas.src.width, oy * screenCanvas.src.height);
