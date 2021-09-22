@@ -12,8 +12,9 @@ window.onload = function() {
 
 let particlesFBO;
 let screenCanvas;
+let reglCanvas;
 function initFramebuffers() {
-  let reglCanvas = document.getElementById('regl-canvas') as HTMLCanvasElement;
+  reglCanvas = document.getElementById('regl-canvas') as HTMLCanvasElement;
   screenCanvas = {
     dst: document.getElementById('screen') as HTMLCanvasElement,
     src: document.createElement('canvas') as HTMLCanvasElement,
@@ -21,8 +22,8 @@ function initFramebuffers() {
   reglCanvas.width = screenCanvas.src.width = screenCanvas.dst.width = window.innerWidth;
   reglCanvas.height = screenCanvas.src.height = screenCanvas.dst.height = window.innerHeight;
 
-  // Holds the particle positions. particles[i, 0].xyzw = {lastPosX, lastPosY, posX, posY}
-  particlesFBO = createDoubleFBO(1, {
+  // Holds the particle data.
+  particlesFBO = createDoubleFBO(2, {
     type: 'float32',
     format: 'rgba',
     wrap: 'clamp',
@@ -30,10 +31,18 @@ function initFramebuffers() {
     height: 1,
   });
 
-  particlesFBO.src.color[0].subimage({ // position
+  // Position. particles0[i, 0].xyzw = {lastPosX, lastPosY, posX, posY}
+  particlesFBO.src.color[0].subimage({
     width: config.numParticles,
     height: 1,
     data: Array.from({length: config.numParticles}, (_, i) => [0,0,Math.random(),Math.random()]),
+  });
+  
+  // Hue. particles1[i, 0].xyzw = {hue, _, _, _}
+  particlesFBO.src.color[1].subimage({
+    width: config.numParticles,
+    height: 1,
+    data: Array.from({length: config.numParticles}, (_, i) => [Math.random(), 0, 0, 0]),
   });
 }
 
@@ -143,27 +152,32 @@ const baseVertShader = (opts) => regl(Object.assign({
 
 const updateParticles = baseVertShader({
   frag: commonFrag + `
-  out vec4 fragColor;
-  uniform sampler2D particlesTex;
+  uniform sampler2D positionTex;
+  uniform sampler2D hueTex;
   uniform float time;
+
+  layout(location = 0) out vec4 fragData0; // position
+  layout(location = 1) out vec4 fragData1; // hue
 
   void checkForBounds(inout vec2 pos, inout vec2 newPos){
     if (newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.)
       newPos = pos = randomPoint(gl_FragCoord.xy, time);
   }
   void main() {
-    vec2 pos = texelFetch(particlesTex, ivec2(gl_FragCoord.xy), 0).zw;
+    vec2 pos = texelFetch(positionTex, ivec2(gl_FragCoord.xy), 0).zw;
     vec2 velocity = velocityAtPoint(pos, vec2(1., 0.), time, 1.);
 
     vec2 newPos = pos + velocity * .01;
     checkForBounds(pos, newPos);
-    fragColor = vec4(pos, newPos);
+    fragData0 = vec4(pos, newPos);
+    fragData1 = texelFetch(hueTex, ivec2(gl_FragCoord.xy), 0);
   }`,
-  framebuffer: () => particlesFBO.dst,
   uniforms: {
-    particlesTex: () => particlesFBO.src,
+    positionTex: () => particlesFBO.src.color[0],
+    hueTex: () => particlesFBO.src.color[1],
     time: regl.context('time'),
   },
+  framebuffer: () => particlesFBO.dst,
 });
 
 const drawFlowField = baseVertShader({
@@ -208,10 +222,13 @@ regl.frame(function(context) {
   drawFlowField({});
 
   regl({framebuffer: particlesFBO.dst})(() => {
+    let gl = reglCanvas.getContext('webgl2');
+    gl.readBuffer(gl.COLOR_ATTACHMENT1);  // FIXME
     let pixels = regl.read() as Float32Array;
     let ctx = screenCanvas.src.getContext('2d');
     ctx.clearRect(0, 0, screenCanvas.src.width, screenCanvas.src.height);
     if (!ctx || context.tick < 4) return;
+    console.log("pixels=", pixels.length);
     for (let i = 0; i < pixels.length; i += 4) {
       let [ox, oy] = [pixels[i], pixels[i+1]];
       let [px, py] = [pixels[i+2], pixels[i+3]];
@@ -226,7 +243,7 @@ regl.frame(function(context) {
     let ctxDst = screenCanvas.dst.getContext('2d') as CanvasRenderingContext2D;
     ctxDst.fillStyle = 'rgba(0, 0, 0, 1.0%)';
     ctxDst.fillRect(0, 0, screenCanvas.dst.width, screenCanvas.dst.height);
-    // ctxDst.drawImage(document.getElementById('regl-canvas') as HTMLCanvasElement, 0, 0);
+    // ctxDst.drawImage(reglCanvas, 0, 0);
 
     ctxDst.drawImage(screenCanvas.src, 0, 0);
   });
