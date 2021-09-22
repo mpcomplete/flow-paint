@@ -1,5 +1,8 @@
+// TODO: particle age
+
 import * as Regl from "regl"
 import * as Webgl2 from "./regl-webgl2-compat.js"
+import { imageShader } from "./image-shader"
 
 const regl = Webgl2.overrideContextType(() => Regl({canvas: "#regl-canvas", extensions: ['WEBGL_draw_buffers', 'OES_texture_float', 'OES_texture_float_linear', 'OES_texture_half_float', 'ANGLE_instanced_arrays']}));
 
@@ -16,8 +19,8 @@ let particles: any = {
   fbo: null,
   hue: []
 };
-
 let screenCanvas;
+let baseImage, baseImageShader, baseImageData;
 function initFramebuffers() {
   let reglCanvas = document.getElementById('regl-canvas') as HTMLCanvasElement;
   screenCanvas = {
@@ -26,6 +29,17 @@ function initFramebuffers() {
   }
   reglCanvas.width = screenCanvas.src.width = screenCanvas.dst.width = window.innerWidth;
   reglCanvas.height = screenCanvas.src.height = screenCanvas.dst.height = window.innerHeight;
+
+  baseImageShader = imageShader(regl);
+  baseImage = createFBO(1, {
+    type: 'float32',
+    format: 'rgba',
+    wrap: 'clamp',
+    min: 'linear',
+    mag: 'linear',
+    width: reglCanvas.width,
+    height: reglCanvas.height,
+  });
 
   // Holds the particle positions. particles[i, 0].xyzw = {lastPosX, lastPosY, posX, posY}
   particles.fbo = createDoubleFBO(1, {
@@ -39,7 +53,7 @@ function initFramebuffers() {
   particles.fbo.src.color[0].subimage({ // position
     width: config.numParticles,
     height: 1,
-    data: Array.from({length: config.numParticles}, (_, i) => [-1,0,0,0]),
+    data: Array.from({length: config.numParticles}, (_, i) => [-1,0,-1,0]),
   });
 
   particles.hue = Array.from({length: config.numParticles});//, (_, i) => 160 + 120 * i/config.numParticles);
@@ -65,7 +79,9 @@ function createDoubleFBO(count, props) {
 }
 
 function initParticle(i: number, pos: Point) {
-  particles.hue[i] = 80*(Math.sin(pos[0]*2*Math.PI)+1) + 60*(Math.cos(pos[1]*2*Math.PI)+1);
+  let scalePos = [Math.floor(pos[0]*screenCanvas.src.width), Math.floor(pos[1]*screenCanvas.src.height)];
+  let bi = 4*(Math.floor(scalePos[1]*screenCanvas.src.width + scalePos[0]));
+  particles.hue[i] = [baseImageData[bi]*255, baseImageData[bi+1]*255, baseImageData[bi+2]*255, baseImageData[bi+3]*100];
 }
 
 const commonFrag = `#version 300 es
@@ -214,6 +230,17 @@ regl.frame(function(context) {
   if (!particles.fbo)
     return;
 
+  if (context.tick < 120) {
+    baseImageShader({});
+    return;
+  } else if (!baseImageData) {
+    regl({framebuffer: baseImage})(() => {
+      baseImageShader({framebuffer: baseImage});
+      baseImageData = regl.read() as Float32Array;
+      console.log('got base image', baseImageData.length, screenCanvas.src.width, screenCanvas.src.height);
+    });
+  }
+
   regl.clear({color: [0, 0, 0, 1]});
 
   updateParticles();
@@ -229,12 +256,14 @@ regl.frame(function(context) {
     for (let i = 0; i < pixels.length; i += 4) {
       let [ox, oy] = [pixels[i], pixels[i+1]];
       let [px, py] = [pixels[i+2], pixels[i+3]];
+      if (px < 0)
+        continue;
       if (ox < 0) {  // negative lastPos signals that this particle died
         initParticle(Math.floor(i / 4), [px, py]);
         continue;
       }
-      let hue = particles.hue[Math.floor(i / 4)];
-      ctx.strokeStyle = `hsl(${hue}, 100%, 50%)`;
+      let rgba = particles.hue[Math.floor(i / 4)];
+      ctx.strokeStyle = `rgba(${rgba[0]}, ${rgba[1]}, ${rgba[2]}, ${rgba[3]}%)`;
       ctx.beginPath();
       ctx.moveTo(ox * screenCanvas.src.width, oy * screenCanvas.src.height);
       ctx.lineTo(px * screenCanvas.src.width, py * screenCanvas.src.height);
