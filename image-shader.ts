@@ -118,7 +118,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord ) {
 `;
 
 shaders['image'] = `
-void mainImage( out vec4 fragColor, in vec2 fragCoord ) {
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   vec2 tsize = vec2(textureSize(iChannel0, 0));
   vec2 scale = vec2(iResolution.x/tsize.x, iResolution.y/tsize.y);
   vec2 uvScaled = uv;

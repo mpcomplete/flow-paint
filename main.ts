@@ -18,6 +18,7 @@ window.onload = function() {
 };
 
 let particles: any = {
+  pixels: Float32Array,
   fbo: null,
   hue: [],
   birth: [],
@@ -40,6 +41,7 @@ function initFramebuffers() {
     //  'https://www.gardeningknowhow.com/wp-content/uploads/2020/12/lonely-japanese-cherry.jpg');
 
   // Holds the particle positions. particles[i, 0].xyzw = {lastPosX, lastPosY, posX, posY}
+  particles.pixels = new Float32Array(config.numParticles * 4);
   particles.fbo = createDoubleFBO(1, {
     type: 'float32',
     format: 'rgba',
@@ -252,13 +254,13 @@ regl.frame(function(context) {
   drawFlowField({});
 
   regl({framebuffer: particles.fbo.dst})(() => {
-    let pixels = regl.read() as Float32Array; // TODO: reuse buffer
+    regl.read(particles.pixels);
     let ctx = screenCanvas.src.getContext('2d');
     ctx.clearRect(0, 0, screenCanvas.src.width, screenCanvas.src.height);
     if (!ctx || context.tick < 4) return;
-    for (let i = 0; i < pixels.length; i += 4) {
-      let [ox, oy] = [pixels[i], pixels[i+1]];
-      let [px, py] = [pixels[i+2], pixels[i+3]];
+    for (let i = 0; i < particles.pixels.length; i += 4) {
+      let [ox, oy] = [particles.pixels[i], particles.pixels[i+1]];
+      let [px, py] = [particles.pixels[i+2], particles.pixels[i+3]];
       if (px < 0)
         continue;
       if (ox < 0) {  // negative lastPos signals that this particle died
@@ -274,7 +276,7 @@ regl.frame(function(context) {
       ctx.stroke();
     }
     let ctxDst = screenCanvas.dst.getContext('2d') as CanvasRenderingContext2D;
-    ctxDst.fillStyle = 'rgba(0, 0, 0, 1.5%)';
+    // ctxDst.fillStyle = 'rgba(0, 0, 0, 1.5%)';
     // ctxDst.fillRect(0, 0, screenCanvas.dst.width, screenCanvas.dst.height);
     // ctxDst.drawImage(document.getElementById('regl-canvas') as HTMLCanvasElement, 0, 0);
 
