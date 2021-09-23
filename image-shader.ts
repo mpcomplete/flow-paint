@@ -1,4 +1,6 @@
-export function imageShader(regl) {
+type Point = [number, number];
+
+function shaderVanGogh(regl) {
   return regl({
     vert: `#version 300 es
     precision highp float;
@@ -15,32 +17,33 @@ export function imageShader(regl) {
     precision highp sampler2D;
     in vec2 uv;
     uniform float iTime;
+    uniform float parameter;
     out vec4 fragColor;
 
-    #define time (0.)
+    #define time (parameter)
 
     vec4 mod289(vec4 x){return x - floor(x * (1.0 / 289.0)) * 289.0;}
     vec4 perm(vec4 x){return mod289(((x * 34.0) + 1.0) * x);}
     float noise3(vec3 p){
-        vec3 a = floor(p);
-        vec3 d = p - a;
-        d = d * d * (3.0 - 2.0 * d);
-    
-        vec4 b = a.xxyy + vec4(0.0, 1.0, 0.0, 1.0);
-        vec4 k1 = perm(b.xyxy);
-        vec4 k2 = perm(k1.xyxy + b.zzww);
-    
-        vec4 c = k2 + a.zzzz;
-        vec4 k3 = perm(c);
-        vec4 k4 = perm(c + 1.0);
-    
-        vec4 o1 = fract(k3 * (1.0 / 41.0));
-        vec4 o2 = fract(k4 * (1.0 / 41.0));
-    
-        vec4 o3 = o2 * d.z + o1 * (1.0 - d.z);
-        vec2 o4 = o3.yw * d.x + o3.xz * (1.0 - d.x);
-    
-        return o4.y * d.y + o4.x * (1.0 - d.y);
+      vec3 a = floor(p);
+      vec3 d = p - a;
+      d = d * d * (3.0 - 2.0 * d);
+
+      vec4 b = a.xxyy + vec4(0.0, 1.0, 0.0, 1.0);
+      vec4 k1 = perm(b.xyxy);
+      vec4 k2 = perm(k1.xyxy + b.zzww);
+
+      vec4 c = k2 + a.zzzz;
+      vec4 k3 = perm(c);
+      vec4 k4 = perm(c + 1.0);
+
+      vec4 o1 = fract(k3 * (1.0 / 41.0));
+      vec4 o2 = fract(k4 * (1.0 / 41.0));
+
+      vec4 o3 = o2 * d.z + o1 * (1.0 - d.z);
+      vec2 o4 = o3.yw * d.x + o3.xz * (1.0 - d.x);
+
+      return o4.y * d.y + o4.x * (1.0 - d.y);
     }
 
     float noise(vec2 p) {
@@ -111,16 +114,12 @@ export function imageShader(regl) {
     void main()
     {
       vec2 p = -1.0 + 2.0 * uv;
-      // p.x *= iResolution.x/iResolution.y;
 
       p.x = p.x*(1. + .2*sin(time*2.));
       p.y = p.y*(1. + .2*sin(time*2.));
       p += vec2(6.5, 6.5);
 
       vec3 color = func(1.5*p);
-      fragColor.xyz = color;
-    //    return;
-
       color = time*vec3(0.9, 0.7, 0.25) + color;
 
       float c1 = color.x*3.;
@@ -143,7 +142,117 @@ export function imageShader(regl) {
     count: 6,
     uniforms: {
       iTime: regl.context('time'),
+      parameter: regl.prop('parameter'),
     },
     framebuffer: regl.prop('framebuffer'),
   });
+}
+
+function shaderTexture(regl) {
+  return regl({
+    vert: `
+    precision mediump float;
+    attribute vec2 position;
+    varying vec2 uv;
+    void main () {
+      uv = position;
+      gl_Position = vec4(1.0 - 2.0 * position, 0, 1);
+    }`,
+    frag: `
+    precision mediump float;
+    uniform sampler2D texture;
+    varying vec2 uv;
+    void main () {
+      gl_FragColor = texture2D(texture, uv);
+    }`,
+
+    attributes: {
+      position: [
+        -2, 0,
+        0, -2,
+        2, 2]
+    },
+    count: 3,
+    uniforms: {
+      texture: regl.prop('texture')
+    },
+  });
+}
+
+export function shaderGenerator(regl, size: Point, param: number) {
+  const shader = shaderVanGogh(regl);
+  const data = new Float32Array(4 * size[0] * size[1]);
+  const fbo = regl.framebuffer({
+    color: regl.texture({
+      type: 'float32',
+      format: 'rgba',
+      wrap: 'clamp',
+      min: 'linear',
+      mag: 'linear',
+      width: size[0],
+      height: size[1],
+    }),
+    depthStencil: false,
+  });
+  let ready = false;
+  return {
+    draw: () => shader({parameter: param}),
+    ensureData: function() {
+      if (!ready) {
+        regl({framebuffer: fbo})(() => {
+          shader({parameter: param, framebuffer: fbo});
+          regl.read({data: data});
+          ready = true;
+        });
+      }
+    },
+    get: function (uv: Point) {
+      let [x, y] = [Math.floor(uv[0]*size[0]), Math.floor((1-uv[1])*size[1])];
+      let i = 4*(y*size[0] + x);
+      return [data[i], data[i+1], data[i+2], data[i+3]];
+    },
+  };
+}
+
+export function imageGenerator(regl, size: Point, url: string) {
+  const shader = shaderTexture(regl);
+  const data = new Float32Array(4 * size[0] * size[1]);
+  const fbo = regl.framebuffer({
+    color: regl.texture({
+      type: 'float32',
+      format: 'rgba',
+      wrap: 'clamp',
+      min: 'linear',
+      mag: 'linear',
+      width: size[0],
+      height: size[1],
+    }),
+    depthStencil: false,
+  });
+
+  var image = new Image();
+  image.crossOrigin = 'anonymous';
+  image.src = url;
+  console.log('got image', image.width, image.height);
+  let texture = null;
+  image.onload = () => texture = regl.texture(image);
+
+  let ready = false;
+  return {
+    draw: () => shader({texture: texture}),
+    ensureData: function() {
+      if (!ready) {
+        regl({framebuffer: fbo})(() => {
+          shader({texture: texture, framebuffer: fbo});
+          regl.read({data: data});
+          ready = true;
+        });
+      }
+    },
+    get: function (uv: Point) {
+      let [x, y] = [Math.floor(uv[0]*size[0]), Math.floor((1-uv[1])*size[1])];
+      let i = 4*(y*size[0] + x);
+      return [data[i], data[i+1], data[i+2], data[i+3]];
+    },
+  };
 }

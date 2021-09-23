@@ -2,7 +2,7 @@
 
 import * as Regl from "regl"
 import * as Webgl2 from "./regl-webgl2-compat.js"
-import { imageShader } from "./image-shader"
+import { shaderGenerator, imageGenerator } from "./image-shader"
 
 const regl = Webgl2.overrideContextType(() => Regl({canvas: "#regl-canvas", extensions: ['WEBGL_draw_buffers', 'OES_texture_float', 'OES_texture_float_linear', 'OES_texture_half_float', 'ANGLE_instanced_arrays']}));
 
@@ -22,7 +22,7 @@ let particles: any = {
   birth: [],
 };
 let screenCanvas;
-let baseImage, baseImageShader, baseImageData;
+let baseImageGenerator;
 function initFramebuffers() {
   let reglCanvas = document.getElementById('regl-canvas') as HTMLCanvasElement;
   screenCanvas = {
@@ -32,16 +32,9 @@ function initFramebuffers() {
   reglCanvas.width = screenCanvas.src.width = screenCanvas.dst.width = window.innerWidth;
   reglCanvas.height = screenCanvas.src.height = screenCanvas.dst.height = window.innerHeight;
 
-  baseImageShader = imageShader(regl);
-  baseImage = createFBO(1, {
-    type: 'float32',
-    format: 'rgba',
-    wrap: 'clamp',
-    min: 'linear',
-    mag: 'linear',
-    width: reglCanvas.width,
-    height: reglCanvas.height,
-  });
+  // baseImageGenerator = shaderGenerator(regl, [reglCanvas.width, reglCanvas.height], 0.7);
+  baseImageGenerator = imageGenerator(regl, [reglCanvas.width, reglCanvas.height],
+     'https://images.unsplash.com/photo-1579610520129-963c74781ffb');
 
   // Holds the particle positions. particles[i, 0].xyzw = {lastPosX, lastPosY, posX, posY}
   particles.fbo = createDoubleFBO(1, {
@@ -88,10 +81,9 @@ function createDoubleFBO(count, props) {
   }
 }
 
-function initParticle(i: number, pos: Point, time: number) {
-  let scalePos = [Math.floor(pos[0]*screenCanvas.src.width), Math.floor(pos[1]*screenCanvas.src.height)];
-  let bi = 4*(Math.floor(scalePos[1]*screenCanvas.src.width + scalePos[0]));
-  particles.hue[i] = [baseImageData[bi]*255, baseImageData[bi+1]*255, baseImageData[bi+2]*255, baseImageData[bi+3]*100];
+function initParticle(i: number, uv: Point, time: number) {
+  let rgba = baseImageGenerator.get(uv);
+  particles.hue[i] = [rgba[0]*255, rgba[1]*255, rgba[2]*255, rgba[3]*100];
   particles.birth[i*4] = time;
 }
 
@@ -251,14 +243,10 @@ regl.frame(function(context) {
     return;
 
   if (context.tick < 120) {
-    baseImageShader({});
+    baseImageGenerator.draw();
     return;
-  } else if (!baseImageData) {
-    regl({framebuffer: baseImage})(() => {
-      baseImageShader({framebuffer: baseImage});
-      baseImageData = regl.read() as Float32Array;
-    });
   }
+  baseImageGenerator.ensureData();
 
   regl.clear({color: [0, 0, 0, 1]});
 
