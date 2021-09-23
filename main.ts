@@ -2,7 +2,7 @@
 
 import * as Regl from "regl"
 import * as Webgl2 from "./regl-webgl2-compat.js"
-import { shaderGenerator, imageGenerator } from "./image-shader"
+import { imageGenerator } from "./image-shader"
 
 const regl = Webgl2.overrideContextType(() => Regl({canvas: "#regl-canvas", extensions: ['WEBGL_draw_buffers', 'OES_texture_float', 'OES_texture_float_linear', 'OES_texture_half_float', 'ANGLE_instanced_arrays']}));
 
@@ -33,9 +33,9 @@ function initFramebuffers() {
   reglCanvas.width = screenCanvas.src.width = screenCanvas.dst.width = window.innerWidth;
   reglCanvas.height = screenCanvas.src.height = screenCanvas.dst.height = window.innerHeight;
 
-  // baseImageGenerator = shaderGenerator(regl, [reglCanvas.width, reglCanvas.height], 0.0);
-  baseImageGenerator = imageGenerator(regl, [reglCanvas.width, reglCanvas.height],
-     'https://images.unsplash.com/photo-1579610520129-963c74781ffb');
+  baseImageGenerator = imageGenerator(regl, [reglCanvas.width, reglCanvas.height], {
+    // type: 'vangogh', parameter: 0.0});
+    type: 'image', imageUrl: 'https://images.unsplash.com/photo-1579610520129-963c74781ffb'});
     //  'https://cdn.theatlantic.com/media/img/photo/2020/11/top-shots-2020-international-landsc/a01_Yuen_MagicalNight-1/original.jpg');
     //  'https://www.gardeningknowhow.com/wp-content/uploads/2020/12/lonely-japanese-cherry.jpg');
 

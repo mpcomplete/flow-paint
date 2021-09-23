@@ -1,6 +1,7 @@
 type Point = [number, number];
 
-let vanGoghShader = `
+let shaders = [];
+shaders['vangogh'] = `
 #define time (parameter)
 
 vec4 mod289(vec4 x){return x - floor(x * (1.0 / 289.0)) * 289.0;}
@@ -116,7 +117,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord ) {
 }
 `;
 
-let textureShader = `
+shaders['image'] = `
 void mainImage( out vec4 fragColor, in vec2 fragCoord ) {
   vec2 tsize = vec2(textureSize(iChannel0, 0));
   vec2 scale = vec2(iResolution.x/tsize.x, iResolution.y/tsize.y);
@@ -170,44 +171,12 @@ function makeShader(regl, fragCode) {
   });
 }
 
-export function shaderGenerator(regl, size: Point, param: number) {
-  const shader = makeShader(regl, vanGoghShader);
-  const data = new Float32Array(4 * size[0] * size[1]);
-  const fbo = regl.framebuffer({
-    color: regl.texture({
-      type: 'float32',
-      format: 'rgba',
-      wrap: 'clamp',
-      min: 'linear',
-      mag: 'linear',
-      width: size[0],
-      height: size[1],
-    }),
-    depthStencil: false,
-  });
-  let ready = false;
-  return {
-    draw: () => shader({parameter: param}),
-    ensureData: function() {
-      if (!ready) {
-        regl({framebuffer: fbo})(() => {
-          shader({parameter: param, framebuffer: fbo});
-          regl.read({data: data});
-          console.log("Got", data);
-          ready = true;
-        });
-      }
-    },
-    get: function (uv: Point) {
-      let [x, y] = [Math.floor(uv[0]*size[0]), Math.floor((1-uv[1])*size[1])];
-      let i = 4*(y*size[0] + x);
-      return [data[i], data[i+1], data[i+2], data[i+3]];
-    },
-  };
-}
-
-export function imageGenerator(regl, size: Point, url: string) {
-  const shader = makeShader(regl, textureShader);
+export function imageGenerator(regl, size: Point, opts:{
+  type: 'image' | 'vangogh',
+  imageUrl?: string,
+  parameter?: number, // TODO iMouse
+}) {
+  const shader = makeShader(regl, shaders[opts.type]);
   const data = new Float32Array(4 * size[0] * size[1]);
   const fbo = regl.framebuffer({
     color: regl.texture({
@@ -222,20 +191,22 @@ export function imageGenerator(regl, size: Point, url: string) {
     depthStencil: false,
   });
 
-  var image = new Image();
-  image.crossOrigin = 'anonymous';
-  image.src = url;
-  console.log('got image', image.width, image.height);
-  let texture = regl.texture();
-  image.onload = () => texture = regl.texture(image);
+  let texture;
+  if (opts.imageUrl) {
+    var image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.src = opts.imageUrl;
+    texture = regl.texture();
+    image.onload = () => texture = regl.texture(image);
+  }
 
   let ready = false;
   return {
-    draw: () => shader({texture: texture}),
+    draw: () => shader({texture: texture, parameter: opts.parameter}),
     ensureData: function() {
       if (!ready) {
         regl({framebuffer: fbo})(() => {
-          shader({texture: texture, framebuffer: fbo});
+          shader({texture: texture, parameter: opts.parameter, framebuffer: fbo});
           regl.read({data: data});
           ready = true;
         });
