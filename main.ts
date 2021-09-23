@@ -94,6 +94,15 @@ precision highp sampler2D;
 
 float PI = 3.14159269369;
 float TAU = 6.28318530718;
+
+// Random static, output range [0,1].
+float PHIg = 1.61803398874989484820459 * 00000.1; // Golden Ratio
+float PIg  = 3.14159265358979323846264 * 00000.1; // PI
+float SRTg = 1.41421356237309504880169 * 10000.0; // Square Root of Two
+float goldRand(in vec2 uv, in float seed) {
+    return fract(sin(dot(uv*seed, vec2(PHIg, PIg)))*SRTg);
+}
+// Smooth noise, output range [0,1] but biased near 0.5.
 vec4 mod289(vec4 x){return x - floor(x * (1.0 / 289.0)) * 289.0;}
 vec4 perm(vec4 x){return mod289(((x * 34.0) + 1.0) * x);}
 float noise(vec3 p){
@@ -117,19 +126,13 @@ float noise(vec3 p){
 
   return o4.y * d.y + o4.x * (1.0 - d.y);
 }
-float PHIg = 1.61803398874989484820459 * 00000.1; // Golden Ratio
-float PIg  = 3.14159265358979323846264 * 00000.1; // PI
-float SRTg = 1.41421356237309504880169 * 10000.0; // Square Root of Two
-float goldNoise(in vec2 uv, in float seed) {
-    return fract(sin(dot(uv*seed, vec2(PHIg, PIg)))*SRTg);
-}
 vec2 rotate(vec2 _st, float _angle) {
     return mat2(cos(_angle), -sin(_angle),
                 sin(_angle), cos(_angle)) * _st;
 }
 vec2 randomPoint(vec2 uv, float t) {
-  float x = goldNoise(uv*3., fract(t)+1.);
-  float y = goldNoise(uv*5., fract(t)+2.);
+  float x = goldRand(uv*3., fract(t)+1.);
+  float y = goldRand(uv*5., fract(t)+2.);
   return vec2(x, y);
 }
 vec3 hsv2rgb(vec3 c) {
@@ -143,8 +146,7 @@ vec3 hsv2rgb(vec3 c) {
 vec2 velocityAtPoint(vec2 p, vec2 uv, float t, float signHACK) {
   // t=0.;
   float f = .5*noise(vec3(p*5., t*.4));
-  // float f = turb(p*5., t*.3)*1.5;
-  // float f = .3*sin(p.x*3.2 + p.y*4.5) + .5*sin(p.x*p.y*TAU);
+  // float f = .5*sin(p.x*3.2 + p.y*4.5 + t*.4) + .5*sin(p.x*p.y*TAU);
   // float f = noise(vec3(p*99.+99., p.x*p.y));
   return rotate(uv, f * TAU * signHACK);
 }`;
@@ -179,7 +181,7 @@ const updateParticles = baseVertShader({
 
   void maybeReset(inout vec2 pos, inout vec2 newPos) {
     float birth = texelFetch(birthTex, ivec2(gl_FragCoord.xy), 0).x;
-    float death = maxAge*(1. + .5*goldNoise(gl_FragCoord.xy + pos, fract(iTime)+1.));
+    float death = maxAge*(1. + .5*goldRand(gl_FragCoord.xy + pos, fract(iTime)+1.));
     if ((iTime - birth) > death || newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.) {
       newPos = randomPoint(gl_FragCoord.xy, iTime);
       pos = vec2(-1, -1);  // Tells the main loop that this particle was reset.
