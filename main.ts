@@ -1,5 +1,3 @@
-// TODO: particle age
-
 import * as Regl from "regl"
 import * as Webgl2 from "./regl-webgl2-compat.js"
 import { imageGenerator } from "./image-shader"
@@ -36,9 +34,7 @@ function initFramebuffers() {
 
   baseImageGenerator = imageGenerator(regl, [reglCanvas.width, reglCanvas.height], {
     // type: 'vangogh', parameter: 0.0});
-    type: 'image', imageUrl: 'https://images.unsplash.com/photo-1579610520129-963c74781ffb'});
-    //  'https://cdn.theatlantic.com/media/img/photo/2020/11/top-shots-2020-international-landsc/a01_Yuen_MagicalNight-1/original.jpg');
-    //  'https://www.gardeningknowhow.com/wp-content/uploads/2020/12/lonely-japanese-cherry.jpg');
+    type: 'image', imageUrl: 'images/face.jpg'});
 
   // Holds the particle positions. particles[i, 0].xyzw = {lastPosX, lastPosY, posX, posY}
   particles.pixels = new Float32Array(config.numParticles * 4);
