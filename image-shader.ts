@@ -248,7 +248,7 @@ export function imageGenerator(regl, size: Point, url: string) {
   image.crossOrigin = 'anonymous';
   image.src = url;
   console.log('got image', image.width, image.height);
-  let texture = null;
+  let texture = regl.texture();
   image.onload = () => texture = regl.texture(image);
 
   let ready = false;

@@ -11,7 +11,7 @@ type Point = [number, number];
 var config = {
   numParticles: 9000,
   lineWidth: .5,
-  lineLength: .1,
+  lineLength: 0.02,
 };
 window.onload = function() {
   initFramebuffers();
@@ -33,9 +33,11 @@ function initFramebuffers() {
   reglCanvas.width = screenCanvas.src.width = screenCanvas.dst.width = window.innerWidth;
   reglCanvas.height = screenCanvas.src.height = screenCanvas.dst.height = window.innerHeight;
 
-  // baseImageGenerator = shaderGenerator(regl, [reglCanvas.width, reglCanvas.height], 0.7);
+  // baseImageGenerator = shaderGenerator(regl, [reglCanvas.width, reglCanvas.height], 0.0);
   baseImageGenerator = imageGenerator(regl, [reglCanvas.width, reglCanvas.height],
      'https://images.unsplash.com/photo-1579610520129-963c74781ffb');
+    //  'https://cdn.theatlantic.com/media/img/photo/2020/11/top-shots-2020-international-landsc/a01_Yuen_MagicalNight-1/original.jpg');
+    //  'https://www.gardeningknowhow.com/wp-content/uploads/2020/12/lonely-japanese-cherry.jpg');
 
   // Holds the particle positions. particles[i, 0].xyzw = {lastPosX, lastPosY, posX, posY}
   particles.fbo = createDoubleFBO(1, {
@@ -94,53 +96,42 @@ precision highp sampler2D;
 
 float PI = 3.14159269369;
 float TAU = 6.28318530718;
-float PHI = 1.61803398874989484820459;
-float goldNoise(in vec2 xy, in float seed){
-    return fract(tan(distance(xy*PHI, xy)*seed)*xy.x);
-}
 vec4 mod289(vec4 x){return x - floor(x * (1.0 / 289.0)) * 289.0;}
 vec4 perm(vec4 x){return mod289(((x * 34.0) + 1.0) * x);}
 float noise(vec3 p){
-    vec3 a = floor(p);
-    vec3 d = p - a;
-    d = d * d * (3.0 - 2.0 * d);
+  vec3 a = floor(p);
+  vec3 d = p - a;
+  d = d * d * (3.0 - 2.0 * d);
 
-    vec4 b = a.xxyy + vec4(0.0, 1.0, 0.0, 1.0);
-    vec4 k1 = perm(b.xyxy);
-    vec4 k2 = perm(k1.xyxy + b.zzww);
+  vec4 b = a.xxyy + vec4(0.0, 1.0, 0.0, 1.0);
+  vec4 k1 = perm(b.xyxy);
+  vec4 k2 = perm(k1.xyxy + b.zzww);
 
-    vec4 c = k2 + a.zzzz;
-    vec4 k3 = perm(c);
-    vec4 k4 = perm(c + 1.0);
+  vec4 c = k2 + a.zzzz;
+  vec4 k3 = perm(c);
+  vec4 k4 = perm(c + 1.0);
 
-    vec4 o1 = fract(k3 * (1.0 / 41.0));
-    vec4 o2 = fract(k4 * (1.0 / 41.0));
+  vec4 o1 = fract(k3 * (1.0 / 41.0));
+  vec4 o2 = fract(k4 * (1.0 / 41.0));
 
-    vec4 o3 = o2 * d.z + o1 * (1.0 - d.z);
-    vec2 o4 = o3.yw * d.x + o3.xz * (1.0 - d.x);
+  vec4 o3 = o2 * d.z + o1 * (1.0 - d.z);
+  vec2 o4 = o3.yw * d.x + o3.xz * (1.0 - d.x);
 
-    return o4.y * d.y + o4.x * (1.0 - d.y);
+  return o4.y * d.y + o4.x * (1.0 - d.y);
 }
-float turb( vec2 U, float t ) {
-  float f = 0., q=1., s=0.;
-
-  float m = 2.;
-// mat2 m = mat2( 1.6,  1.2, -1.2,  1.6 );
-  for (int i=0; i<2; i++) {
-    U -= t*vec2(.6,.2);
-    f += q*noise(vec3(U,t));
-    s += q;
-    q /= 2.; U *= m; t *= 1.71;  // because of diff, we may rather use q/=4.;
-  }
-  return f/s;
+float PHIg = 1.61803398874989484820459 * 00000.1; // Golden Ratio
+float PIg  = 3.14159265358979323846264 * 00000.1; // PI
+float SRTg = 1.41421356237309504880169 * 10000.0; // Square Root of Two
+float goldNoise(in vec2 uv, in float seed) {
+    return fract(sin(dot(uv*seed, vec2(PHIg, PIg)))*SRTg);
 }
 vec2 rotate(vec2 _st, float _angle) {
     return mat2(cos(_angle), -sin(_angle),
                 sin(_angle), cos(_angle)) * _st;
 }
 vec2 randomPoint(vec2 uv, float t) {
-  float x = goldNoise(uv*3., t);
-  float y = goldNoise(uv*5., t);
+  float x = goldNoise(uv*3., fract(t)+1.);
+  float y = goldNoise(uv*5., fract(t)+2.);
   return vec2(x, y);
 }
 vec3 hsv2rgb(vec3 c) {
@@ -152,12 +143,12 @@ vec3 hsv2rgb(vec3 c) {
 }
 // TODO: figure out why the angle is negated in updateParticles vs drawFlowField.
 vec2 velocityAtPoint(vec2 p, vec2 uv, float t, float signHACK) {
-  t=0.;
-  // float f = noise(vec3(p*5., t*.4));
+  // t=0.;
+  float f = .5*noise(vec3(p*5., t*.4));
   // float f = turb(p*5., t*.3)*1.5;
-  float f = .3*sin(p.x*3.2 + p.y*4.5) + .5*sin(p.x*p.y*TAU);
+  // float f = .3*sin(p.x*3.2 + p.y*4.5) + .5*sin(p.x*p.y*TAU);
   // float f = noise(vec3(p*99.+99., p.x*p.y));
-  return rotate(uv, f * PI * 2. * signHACK);
+  return rotate(uv, f * TAU * signHACK);
 }`;
 
 const baseVertShader = (opts) => regl(Object.assign({
@@ -181,6 +172,7 @@ const baseVertShader = (opts) => regl(Object.assign({
 
 const updateParticles = baseVertShader({
   frag: commonFrag + `
+  in vec2 uv;
   out vec4 fragColor;
   uniform sampler2D particlesTex;
   uniform sampler2D birthTex;
@@ -189,7 +181,8 @@ const updateParticles = baseVertShader({
 
   void maybeReset(inout vec2 pos, inout vec2 newPos) {
     float birth = texelFetch(birthTex, ivec2(gl_FragCoord.xy), 0).x;
-    if ((iTime - birth) > maxAge*(1. + .5*goldNoise(gl_FragCoord.xy, 99.)) || newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.) {
+    float death = maxAge*(1. + .5*goldNoise(gl_FragCoord.xy + pos, fract(iTime)+1.));
+    if ((iTime - birth) > death || newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.) {
       newPos = randomPoint(gl_FragCoord.xy, iTime);
       pos = vec2(-1, -1);  // Tells the main loop that this particle was reset.
     }
