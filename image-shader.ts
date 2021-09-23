@@ -16,9 +16,9 @@ function shaderVanGogh(regl) {
     precision highp float;
     precision highp sampler2D;
     in vec2 uv;
+    out vec4 fragColor;
     uniform float iTime;
     uniform float parameter;
-    out vec4 fragColor;
 
     #define time (parameter)
 
@@ -150,31 +150,45 @@ function shaderVanGogh(regl) {
 
 function shaderTexture(regl) {
   return regl({
-    vert: `
-    precision mediump float;
-    attribute vec2 position;
-    varying vec2 uv;
+    vert: `#version 300 es
+    precision highp float;
+    in vec2 position;
+    out vec2 uv;
+
     void main () {
-      uv = position;
-      gl_Position = vec4(1.0 - 2.0 * position, 0, 1);
+      uv = position * 0.5 + 0.5;
+      gl_Position = vec4(position.x, -position.y, 0.0, 1.0);
     }`,
-    frag: `
+    frag: `#version 300 es
     precision mediump float;
-    uniform sampler2D texture;
-    varying vec2 uv;
+    uniform sampler2D inputTex;
+    in vec2 uv;
+    out vec4 fragColor;
+    uniform vec2 iResolution;
     void main () {
-      gl_FragColor = texture2D(texture, uv);
+      vec2 tsize = vec2(textureSize(inputTex, 0));
+      vec2 scale = vec2(iResolution.x/tsize.x, iResolution.y/tsize.y);
+      vec2 uvScaled = uv;
+      if (scale.x > scale.y) {
+        // We scaled in y (the smaller dim). Center uv, scale it, and un-center it.
+        uvScaled.x -= .5;
+        uvScaled.x *= scale.x/scale.y;
+        uvScaled.x += .5;
+      } else {
+        uvScaled.y -= .5;
+        uvScaled.y *= scale.y/scale.x;
+        uvScaled.y += .5;
+      }
+      fragColor = texture(inputTex, uvScaled);
     }`,
 
     attributes: {
-      position: [
-        -2, 0,
-        0, -2,
-        2, 2]
+      position: [[-1, -1], [-1, 1], [1, 1], [-1, -1], [1, 1], [1, -1]]
     },
-    count: 3,
+    count: 6,
     uniforms: {
-      texture: regl.prop('texture')
+      inputTex: regl.prop('texture'),
+      iResolution: (context) => [context.viewportWidth, context.viewportHeight]
     },
   });
 }

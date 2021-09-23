@@ -11,6 +11,7 @@ type Point = [number, number];
 var config = {
   numParticles: 9000,
   lineWidth: .5,
+  lineLength: .1,
 };
 window.onload = function() {
   initFramebuffers();
@@ -183,11 +184,12 @@ const updateParticles = baseVertShader({
   out vec4 fragColor;
   uniform sampler2D particlesTex;
   uniform sampler2D birthTex;
+  uniform float maxAge;
   uniform float iTime;
 
   void maybeReset(inout vec2 pos, inout vec2 newPos) {
     float birth = texelFetch(birthTex, ivec2(gl_FragCoord.xy), 0).x;
-    if ((iTime - birth) > .2 + .1*goldNoise(gl_FragCoord.xy, 99.) || newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.) {
+    if ((iTime - birth) > maxAge*(1. + .5*goldNoise(gl_FragCoord.xy, 99.)) || newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.) {
       newPos = randomPoint(gl_FragCoord.xy, iTime);
       pos = vec2(-1, -1);  // Tells the main loop that this particle was reset.
     }
@@ -204,6 +206,7 @@ const updateParticles = baseVertShader({
   uniforms: {
     particlesTex: () => particles.fbo.src,
     birthTex: () => particles.birthBuffer,
+    maxAge: () => config.lineLength,
     iTime: regl.context('time'),
   },
 });
