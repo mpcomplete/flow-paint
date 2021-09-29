@@ -1,17 +1,24 @@
 import * as Regl from "regl"
 import * as Webgl2 from "./regl-webgl2-compat.js"
 import { imageGenerator } from "./image-shader"
+import * as dat from "dat.gui"
 
 const regl = Webgl2.overrideContextType(() => Regl({canvas: "#regl-canvas", extensions: ['WEBGL_draw_buffers', 'OES_texture_float', 'OES_texture_float_linear', 'OES_texture_half_float', 'ANGLE_instanced_arrays']}));
 
 type Point = [number, number];
 
-var config = {
-  numParticles: 9000,
-  lineWidth: .5,
-  lineLength: 0.02,
-};
+var config:any = { };
 window.onload = function() {
+  let gui = new dat.GUI();
+  const readableName = (n) => n.replace(/([A-Z])/g, ' $1').toLowerCase()
+  function addConfig(name, initial, min, max) {
+    config[name] = initial;
+    return gui.add(config, name, min, max).name(readableName(name));
+  }
+  addConfig('numParticles', 9000, 1000, 16000).name('line count').step(500).onFinishChange(initFramebuffers);
+  addConfig('lineWidth', 0.5, 0.2, 20.0).step(.01);
+  addConfig('lineLength', 0.09, 0.02, 1.0).step(.01);
+  addConfig('lineSpeed', 1., 0.1, 2.0).step(.01);
   initFramebuffers();
 };
 
@@ -22,7 +29,8 @@ let particles: any = {
   birth: [],
 };
 let screenCanvas;
-let baseImageGenerator;
+let sourceImageGenerator;
+let startTime:Date;
 function initFramebuffers() {
   let reglCanvas = document.getElementById('regl-canvas') as HTMLCanvasElement;
   screenCanvas = {
@@ -32,7 +40,7 @@ function initFramebuffers() {
   reglCanvas.width = screenCanvas.src.width = screenCanvas.dst.width = window.innerWidth;
   reglCanvas.height = screenCanvas.src.height = screenCanvas.dst.height = window.innerHeight;
 
-  baseImageGenerator = imageGenerator(regl, [reglCanvas.width, reglCanvas.height], {
+  sourceImageGenerator = imageGenerator(regl, [reglCanvas.width, reglCanvas.height], {
     // type: 'vangogh', parameter: 0.0});
     type: 'image', imageUrl: 'images/face.jpg'});
 
@@ -61,6 +69,8 @@ function initFramebuffers() {
     height: 1,
     data: particles.birth,
   });
+
+  startTime = new Date();
 }
 
 function createFBO(count, props) {
@@ -83,7 +93,7 @@ function createDoubleFBO(count, props) {
 }
 
 function initParticle(i: number, uv: Point, time: number) {
-  let rgba = baseImageGenerator.get(uv);
+  let rgba = sourceImageGenerator.get(uv);
   particles.hue[i] = [rgba[0]*255, rgba[1]*255, rgba[2]*255, rgba[3]*100];
   particles.birth[i*4] = time;
 }
@@ -177,6 +187,7 @@ const updateParticles = baseVertShader({
   uniform sampler2D particlesTex;
   uniform sampler2D birthTex;
   uniform float maxAge;
+  uniform float maxSpeed;
   uniform float iTime;
 
   void maybeReset(inout vec2 pos, inout vec2 newPos) {
@@ -191,7 +202,7 @@ const updateParticles = baseVertShader({
     vec2 pos = texelFetch(particlesTex, ivec2(gl_FragCoord.xy), 0).zw;
     vec2 velocity = velocityAtPoint(pos, vec2(1., 0.), iTime, 1.);
 
-    vec2 newPos = pos + velocity * .01;
+    vec2 newPos = pos + velocity * .01 * maxSpeed;
     maybeReset(pos, newPos);
     fragColor = vec4(pos, newPos);
   }`,
@@ -199,7 +210,8 @@ const updateParticles = baseVertShader({
   uniforms: {
     particlesTex: () => particles.fbo.src,
     birthTex: () => particles.birthBuffer,
-    maxAge: () => config.lineLength,
+    maxAge: () => Math.max(.02, config.lineLength / config.lineSpeed),
+    maxSpeed: () => config.lineSpeed,
     iTime: regl.context('time'),
   },
 });
@@ -238,11 +250,11 @@ regl.frame(function(context) {
   if (!particles.fbo)
     return;
 
-  if (context.tick < 120) {
-    baseImageGenerator.draw();
+  if ((new Date().getTime() - startTime.getTime()) < 2000) {
+    sourceImageGenerator.draw();
     return;
   }
-  baseImageGenerator.ensureData();
+  sourceImageGenerator.ensureData();
 
   regl.clear({color: [0, 0, 0, 1]});
 
