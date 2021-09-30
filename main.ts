@@ -1,6 +1,7 @@
 import * as Regl from "regl"
 import * as Webgl2 from "./regl-webgl2-compat.js"
 import { imageGenerator } from "./image-shader"
+import * as dragdrop from "./dragdrop"
 import * as dat from "dat.gui"
 
 const regl = Webgl2.overrideContextType(() => Regl({canvas: "#regl-canvas", extensions: ['WEBGL_draw_buffers', 'OES_texture_float', 'OES_texture_float_linear', 'OES_texture_half_float', 'ANGLE_instanced_arrays']}));
@@ -20,6 +21,10 @@ window.onload = function() {
   addConfig('lineLength', 0.09, 0.02, 1.0).step(.01);
   addConfig('lineSpeed', 1., 0.1, 2.0).step(.01);
   initFramebuffers();
+  dragdrop.init();
+  dragdrop.handlers.ondrop = function(url) {
+    initGenerator({type: 'image', imageUrl: url});
+  };
 };
 
 let particles: any = {
@@ -28,11 +33,12 @@ let particles: any = {
   hue: [],
   birth: [],
 };
+let reglCanvas;
 let screenCanvas;
 let sourceImageGenerator;
 let startTime:Date;
 function initFramebuffers() {
-  let reglCanvas = document.getElementById('regl-canvas') as HTMLCanvasElement;
+  reglCanvas = document.getElementById('regl-canvas') as HTMLCanvasElement;
   screenCanvas = {
     dst: document.getElementById('screen') as HTMLCanvasElement,
     src: document.createElement('canvas') as HTMLCanvasElement,
@@ -40,9 +46,8 @@ function initFramebuffers() {
   reglCanvas.width = screenCanvas.src.width = screenCanvas.dst.width = window.innerWidth;
   reglCanvas.height = screenCanvas.src.height = screenCanvas.dst.height = window.innerHeight;
 
-  sourceImageGenerator = imageGenerator(regl, [reglCanvas.width, reglCanvas.height], {
-    // type: 'vangogh', parameter: 0.0});
-    type: 'image', imageUrl: 'images/face.jpg'});
+  // initGenerator({type: 'vangogh', parameter: 0.0});
+  initGenerator({type: 'image', imageUrl: 'images/face.jpg'});
 
   // Holds the particle positions. particles[i, 0].xyzw = {lastPosX, lastPosY, posX, posY}
   particles.pixels = new Float32Array(config.numParticles * 4);
@@ -69,8 +74,14 @@ function initFramebuffers() {
     height: 1,
     data: particles.birth,
   });
+}
 
+function initGenerator(opts) {
+  sourceImageGenerator = imageGenerator(regl, [reglCanvas.width, reglCanvas.height], opts);
   startTime = new Date();
+
+  let ctxDst = screenCanvas.dst.getContext('2d') as CanvasRenderingContext2D;
+  ctxDst.clearRect(0, 0, screenCanvas.dst.width, screenCanvas.dst.height);
 }
 
 function createFBO(count, props) {
