@@ -12,7 +12,7 @@ var config:any = { };
 window.onload = function() {
   let gui = new dat.GUI();
   const readableName = (n) => n.replace(/([A-Z])/g, ' $1').toLowerCase()
-  function addConfig(name, initial, min, max) {
+  function addConfig(name, initial, min?, max?) {
     config[name] = initial;
     return gui.add(config, name, min, max).name(readableName(name));
   }
@@ -20,6 +20,7 @@ window.onload = function() {
   addConfig('lineWidth', 0.5, 0.2, 20.0).step(.01);
   addConfig('lineLength', 0.09, 0.02, 1.0).step(.01);
   addConfig('lineSpeed', 1., 0.1, 2.0).step(.01);
+  addConfig('drawFlowField', false);
   initFramebuffers();
   dragdrop.init();
   dragdrop.handlers.ondrop = function(url) {
@@ -46,8 +47,8 @@ function initFramebuffers() {
   reglCanvas.width = screenCanvas.src.width = screenCanvas.dst.width = window.innerWidth;
   reglCanvas.height = screenCanvas.src.height = screenCanvas.dst.height = window.innerHeight;
 
-  // initGenerator({type: 'vangogh', parameter: 0.0});
-  initGenerator({type: 'image', imageUrl: 'images/face.jpg'});
+  initGenerator({type: 'vangogh', parameter: 0.0});
+  // initGenerator({type: 'image', imageUrl: 'images/face.jpg'});
 
   // Holds the particle positions. particles[i, 0].xyzw = {lastPosX, lastPosY, posX, posY}
   particles.pixels = new Float32Array(config.numParticles * 4);
@@ -116,12 +117,25 @@ precision highp sampler2D;
 float PI = 3.14159269369;
 float TAU = 6.28318530718;
 
-// Random static, output range [0,1].
-float PHIg = 1.61803398874989484820459 * 00000.1; // Golden Ratio
-float PIg  = 3.14159265358979323846264 * 00000.1; // PI
-float SRTg = 1.41421356237309504880169 * 10000.0; // Square Root of Two
-float goldRand(in vec2 uv, in float seed) {
-    return fract(sin(dot(uv*seed, vec2(PHIg, PIg)))*SRTg);
+// http://www.jcgt.org/published/0009/03/02/
+uvec3 pcg3d(uvec3 v) {
+  v = v * 1664525u + 1013904223u;
+
+  v.x += v.y*v.z;
+  v.y += v.z*v.x;
+  v.z += v.x*v.y;
+
+  v ^= v >> 16u;
+
+  v.x += v.y*v.z;
+  v.y += v.z*v.x;
+  v.z += v.x*v.y;
+
+  return v;
+}
+vec3 hash(vec3 uvt) {
+  uvec3 hu = pcg3d(uvec3(uvt * 1717.));  // scale by approximate resolution
+  return vec3(hu) * (1.0/float(0xffffffffu));
 }
 // Smooth noise, output range [0,1] but biased near 0.5.
 vec4 mod289(vec4 x){return x - floor(x * (1.0 / 289.0)) * 289.0;}
@@ -152,9 +166,7 @@ vec2 rotate(vec2 _st, float _angle) {
                 sin(_angle), cos(_angle)) * _st;
 }
 vec2 randomPoint(vec2 uv, float t) {
-  float x = goldRand(uv*3., fract(t)+1.);
-  float y = goldRand(uv*5., fract(t)+2.);
-  return vec2(x, y);
+  return hash(vec3(uv, t)).xy;
 }
 vec3 hsv2rgb(vec3 c) {
   // Íñigo Quílez
@@ -200,10 +212,11 @@ const updateParticles = baseVertShader({
   uniform float maxAge;
   uniform float maxSpeed;
   uniform float iTime;
+  uniform vec2 iResolution;
 
   void maybeReset(inout vec2 pos, inout vec2 newPos) {
     float birth = texelFetch(birthTex, ivec2(gl_FragCoord.xy), 0).x;
-    float death = maxAge*(1. + .5*goldRand(gl_FragCoord.xy + pos, fract(iTime)+1.));
+    float death = maxAge*(1. + .5*hash(vec3(gl_FragCoord.xy/iResolution.xy + pos, iTime)).x);
     if ((iTime - birth) > death || newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.) {
       newPos = randomPoint(gl_FragCoord.xy, iTime);
       pos = vec2(-1, -1);  // Tells the main loop that this particle was reset.
@@ -224,6 +237,7 @@ const updateParticles = baseVertShader({
     maxAge: () => Math.max(.02, config.lineLength / config.lineSpeed),
     maxSpeed: () => config.lineSpeed,
     iTime: regl.context('time'),
+    iResolution: (context) => [context.viewportWidth, context.viewportHeight],
   },
 });
 
@@ -267,12 +281,13 @@ regl.frame(function(context) {
   }
   sourceImageGenerator.ensureData();
 
-  regl.clear({color: [0, 0, 0, 1]});
+  regl.clear({color: [0, 0, 0, 0]});
 
   updateParticles();
   particles.fbo.swap();
 
-  drawFlowField({});
+  if (config.drawFlowField)
+    drawFlowField({});
 
   regl({framebuffer: particles.fbo.dst})(() => {
     regl.read(particles.pixels);
@@ -299,8 +314,6 @@ regl.frame(function(context) {
     let ctxDst = screenCanvas.dst.getContext('2d') as CanvasRenderingContext2D;
     // ctxDst.fillStyle = 'rgba(0, 0, 0, 1.5%)';
     // ctxDst.fillRect(0, 0, screenCanvas.dst.width, screenCanvas.dst.height);
-    // ctxDst.drawImage(document.getElementById('regl-canvas') as HTMLCanvasElement, 0, 0);
-
     ctxDst.drawImage(screenCanvas.src, 0, 0);
   });
 
