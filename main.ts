@@ -20,7 +20,7 @@ window.onload = function() {
   addConfig('lineWidth', 0.5, 0.2, 20.0).step(.01);
   addConfig('lineLength', 0.09, 0.02, 1.0).step(.01);
   addConfig('lineSpeed', 1., 0.1, 2.0).step(.01);
-  addConfig('drawFlowField', false);
+  addConfig('drawFlowField', true);
   initFramebuffers();
   dragdrop.init();
   dragdrop.handlers.ondrop = function(url) {
@@ -47,8 +47,8 @@ function initFramebuffers() {
   reglCanvas.width = screenCanvas.src.width = screenCanvas.dst.width = window.innerWidth;
   reglCanvas.height = screenCanvas.src.height = screenCanvas.dst.height = window.innerHeight;
 
-  initGenerator({type: 'vangogh', parameter: 0.0});
-  // initGenerator({type: 'image', imageUrl: 'images/face.jpg'});
+  // initGenerator({type: 'vangogh', parameter: 0.0});
+  initGenerator({type: 'image', imageUrl: 'images/face.jpg'});
 
   // Holds the particle positions. particles[i, 0].xyzw = {lastPosX, lastPosY, posX, posY}
   particles.pixels = new Float32Array(config.numParticles * 4);
@@ -133,40 +133,27 @@ uvec3 pcg3d(uvec3 v) {
 
   return v;
 }
-vec3 hash(vec3 uvt) {
+// https://www.shadertoy.com/view/XlGcRh#
+vec3 hash3(vec3 uvt) {
   uvec3 hu = pcg3d(uvec3(uvt * 1717.));  // scale by approximate resolution
   return vec3(hu) * (1.0/float(0xffffffffu));
 }
-// Smooth noise, output range [0,1] but biased near 0.5.
-vec4 mod289(vec4 x){return x - floor(x * (1.0 / 289.0)) * 289.0;}
-vec4 perm(vec4 x){return mod289(((x * 34.0) + 1.0) * x);}
-float noise(vec3 p){
-  vec3 a = floor(p);
-  vec3 d = p - a;
-  d = d * d * (3.0 - 2.0 * d);
-
-  vec4 b = a.xxyy + vec4(0.0, 1.0, 0.0, 1.0);
-  vec4 k1 = perm(b.xyxy);
-  vec4 k2 = perm(k1.xyxy + b.zzww);
-
-  vec4 c = k2 + a.zzzz;
-  vec4 k3 = perm(c);
-  vec4 k4 = perm(c + 1.0);
-
-  vec4 o1 = fract(k3 * (1.0 / 41.0));
-  vec4 o2 = fract(k4 * (1.0 / 41.0));
-
-  vec4 o3 = o2 * d.z + o1 * (1.0 - d.z);
-  vec2 o4 = o3.yw * d.x + o3.xz * (1.0 - d.x);
-
-  return o4.y * d.y + o4.x * (1.0 - d.y);
+// https://gist.github.com/patriciogonzalezvivo/670c22f3966e662d2f83
+vec3 noise3(vec3 x) {
+	vec3 i = floor(x);
+	vec3 f = fract(x);
+	vec3 u = f * f * (3.0 - 2.0 * f);
+	return mix(mix(mix( hash3(i + vec3(0,0,0)), hash3(i + vec3(1,0,0)), u.x),
+                 mix( hash3(i + vec3(0,1,0)), hash3(i + vec3(1,1,0)), u.x), u.y),
+             mix(mix( hash3(i + vec3(0,0,1)), hash3(i + vec3(1,0,1)), u.x),
+                 mix( hash3(i + vec3(0,1,1)), hash3(i + vec3(1,1,1)), u.x), u.y), u.z);
 }
 vec2 rotate(vec2 _st, float _angle) {
     return mat2(cos(_angle), -sin(_angle),
                 sin(_angle), cos(_angle)) * _st;
 }
 vec2 randomPoint(vec2 uv, float t) {
-  return hash(vec3(uv, t)).xy;
+  return hash3(vec3(uv, t)).xy;
 }
 vec3 hsv2rgb(vec3 c) {
   // Íñigo Quílez
@@ -178,7 +165,8 @@ vec3 hsv2rgb(vec3 c) {
 // TODO: figure out why the angle is negated in updateParticles vs drawFlowField.
 vec2 velocityAtPoint(vec2 p, vec2 uv, float t, float signHACK) {
   // t=0.;
-  float f = .5*noise(vec3(p*5., t*.4));
+  // return normalize(noise3(vec3(p*5., t*.4)).xy);
+  float f = noise3(vec3(p*7., t*.4)).x;
   // float f = .5*sin(p.x*3.2 + p.y*4.5 + t*.4) + .5*sin(p.x*p.y*TAU);
   // float f = noise(vec3(p*99.+99., p.x*p.y));
   return rotate(uv, f * TAU * signHACK);
@@ -216,7 +204,7 @@ const updateParticles = baseVertShader({
 
   void maybeReset(inout vec2 pos, inout vec2 newPos) {
     float birth = texelFetch(birthTex, ivec2(gl_FragCoord.xy), 0).x;
-    float death = maxAge*(1. + .5*hash(vec3(gl_FragCoord.xy/iResolution.xy + pos, iTime)).x);
+    float death = maxAge*(1. + .5*hash3(vec3(gl_FragCoord.xy/iResolution.xy + pos, iTime)).x);
     if ((iTime - birth) > death || newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.) {
       newPos = randomPoint(gl_FragCoord.xy, iTime);
       pos = vec2(-1, -1);  // Tells the main loop that this particle was reset.
@@ -224,9 +212,9 @@ const updateParticles = baseVertShader({
   }
   void main() {
     vec2 pos = texelFetch(particlesTex, ivec2(gl_FragCoord.xy), 0).zw;
-    vec2 velocity = velocityAtPoint(pos, vec2(1., 0.), iTime, 1.);
+    vec2 velocity = velocityAtPoint(pos, vec2(0., 1.), iTime, 1.);
 
-    vec2 newPos = pos + velocity * .01 * maxSpeed;
+    vec2 newPos = pos + velocity * .003 * maxSpeed;
     maybeReset(pos, newPos);
     fragColor = vec4(pos, newPos);
   }`,
