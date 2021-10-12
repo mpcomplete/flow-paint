@@ -8,7 +8,9 @@ const regl = Webgl2.overrideContextType(() => Regl({canvas: "#regl-canvas", exte
 
 type Point = [number, number];
 
-var config:any = { };
+var config:any = {
+  numParticles: 9000,
+};
 window.onload = function() {
   let gui = new dat.GUI();
   const readableName = (n) => n.replace(/([A-Z])/g, ' $1').toLowerCase()
@@ -16,7 +18,6 @@ window.onload = function() {
     config[name] = initial;
     return gui.add(config, name, min, max).name(readableName(name));
   }
-  addConfig('numParticles', 9000, 1000, 16000).name('line count').step(500).onFinishChange(initFramebuffers);
   addConfig('lineWidth', 0.5, 0.2, 20.0).step(.01);
   addConfig('lineLength', 0.09, 0.02, 1.0).step(.01);
   addConfig('lineSpeed', 1., 0.1, 2.0).step(.01);
@@ -48,7 +49,7 @@ function initFramebuffers() {
   reglCanvas.height = screenCanvas.src.height = screenCanvas.dst.height = window.innerHeight;
 
   // initGenerator({type: 'vangogh', parameter: 0.0});
-  initGenerator({type: 'image', imageUrl: 'images/face.jpg'});
+  initGenerator({type: 'image', imageUrl: 'images/starry.jpg'});
 
   // Holds the particle positions. particles[i, 0].xyzw = {lastPosX, lastPosY, posX, posY}
   particles.pixels = new Float32Array(config.numParticles * 4);
@@ -149,8 +150,8 @@ vec3 noise3(vec3 x) {
                  mix( hash3(i + vec3(0,1,1)), hash3(i + vec3(1,1,1)), u.x), u.y), u.z);
 }
 vec2 rotate(vec2 _st, float _angle) {
-    return mat2(cos(_angle), -sin(_angle),
-                sin(_angle), cos(_angle)) * _st;
+  return mat2(cos(_angle), -sin(_angle),
+              sin(_angle), cos(_angle)) * _st;
 }
 vec2 randomPoint(vec2 uv, float t) {
   return hash3(vec3(uv, t)).xy;
@@ -162,14 +163,38 @@ vec3 hsv2rgb(vec3 c) {
   rgb = rgb * rgb * (3. - 2. * rgb);
   return c.z * mix(vec3(1.), rgb, c.y);
 }
-// TODO: figure out why the angle is negated in updateParticles vs drawFlowField.
-vec2 velocityAtPoint(vec2 p, vec2 uv, float t, float signHACK) {
+vec2 voronoi(vec2 st, float t) {
+  vec2 i_st = floor(st);
+  vec2 f_st = fract(st);
+
+  float m_dist = 1.;  // minimum distance
+  vec2 v = vec2(1., 0.);
+
+  for (int y= -1; y <= 1; y++) {
+    for (int x= -1; x <= 1; x++) {
+      vec2 neighbor = vec2(float(x), float(y));
+
+      // Random position from current + neighbor place in the grid
+      vec2 point = noise3(vec3(i_st + neighbor, t)).xy;
+      // point = 0.5 + 0.5*sin(u_time + 6.2831*point);
+
+      vec2 diff = neighbor + point - f_st;
+      float dist = length(diff);
+      if (dist < m_dist) {
+        dist = m_dist;
+        v = diff;
+      }
+    }
+  }
+  return rotate(normalize(v), PI/2.);
+}
+vec2 velocityAtPoint(vec2 p, float t) {
+  return voronoi(p*9., t*.1);
   // t=0.;
-  // return normalize(noise3(vec3(p*5., t*.4)).xy);
-  float f = noise3(vec3(p*7., t*.4)).x;
-  // float f = .5*sin(p.x*3.2 + p.y*4.5 + t*.4) + .5*sin(p.x*p.y*TAU);
-  // float f = noise(vec3(p*99.+99., p.x*p.y));
-  return rotate(uv, f * TAU * signHACK);
+  // return normalize(noise3(vec3(p*7., t*.4)).xy - .5);
+  // float f = noise3(vec3(p*7., t*.4)).x;
+  float f = .5*sin(p.x*3.2 + p.y*4.5 + t*.4) + .5*sin(p.x*p.y*TAU);
+  return rotate(vec2(1., 0.), f * TAU);
 }`;
 
 const baseVertShader = (opts) => regl(Object.assign({
@@ -212,7 +237,7 @@ const updateParticles = baseVertShader({
   }
   void main() {
     vec2 pos = texelFetch(particlesTex, ivec2(gl_FragCoord.xy), 0).zw;
-    vec2 velocity = velocityAtPoint(pos, vec2(0., 1.), iTime, 1.);
+    vec2 velocity = velocityAtPoint(pos, iTime);
 
     vec2 newPos = pos + velocity * .003 * maxSpeed;
     maybeReset(pos, newPos);
@@ -234,25 +259,17 @@ const drawFlowField = baseVertShader({
   in vec2 uv;
   uniform float iTime;
   out vec4 fragColor;
-
-  // p is base, q is width,height
-  float sdTriangleIsosceles( in vec2 p, in vec2 q ) {
-      p.x = abs(p.x);
-      vec2 a = p - q*clamp( dot(p,q)/dot(q,q), 0.0, 1.0 );
-      vec2 b = p - q*vec2( clamp( p.x/q.x, 0.0, 1.0 ), 1.0 );
-      float s = -sign( q.y );
-      vec2 d = min( vec2( dot(a,a), s*(p.x*q.y-p.y*q.x) ),
-                    vec2( dot(b,b), s*(p.y-q.y)  ));
-      return -sqrt(d.x)*sign(d.y);
-  }
-  float cell(in vec2 uv) {
-    uv = rotate(uv, -PI*.5);
-    return 1. - sign(sdTriangleIsosceles(uv - vec2(0., .5), vec2(.05, -.4)));
+  float udSegment( in vec2 p, in vec2 a, in vec2 b ) {
+      vec2 ba = b-a;
+      vec2 pa = p-a;
+      float h =clamp( dot(pa,ba)/(1.1*dot(ba,ba)), 0.0, 1.0 );
+      return length(pa-h*ba) - .05;
   }
   void main() {
-    vec2 velocity = velocityAtPoint(uv, fract(uv*64.) - .5, iTime, -1.0);
-    float c = cell(velocity);
-    fragColor.rgb = vec3(c);
+    vec2 center = vec2(0.);
+    vec2 velocity = velocityAtPoint(uv, iTime);
+    float c = udSegment(fract(uv*64.) - .5, center, velocity);
+    fragColor.rgb = vec3(1. - sign(c));
   }`,
   uniforms: {
     iTime: regl.context('time'),
@@ -263,11 +280,12 @@ regl.frame(function(context) {
   if (!particles.fbo)
     return;
 
-  if ((new Date().getTime() - startTime.getTime()) < 2000) {
-    sourceImageGenerator.draw();
+  // if ((new Date().getTime() - startTime.getTime()) < 10) {
+  //   sourceImageGenerator.draw();
+  //   return;
+  // }
+  if (!sourceImageGenerator.ensureData())
     return;
-  }
-  sourceImageGenerator.ensureData();
 
   regl.clear({color: [0, 0, 0, 0]});
 

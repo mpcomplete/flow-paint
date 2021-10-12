@@ -1,5 +1,5 @@
 export function init() {
-  let dropRegion = document.querySelector('#screen')!;
+  let dropRegion = document.querySelector('#regl-canvas')!;
   dropRegion.addEventListener('dragenter', preventDefault, false);
   dropRegion.addEventListener('dragleave', preventDefault, false);
   dropRegion.addEventListener('dragover', preventDefault, false);

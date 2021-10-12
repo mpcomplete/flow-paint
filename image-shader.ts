@@ -171,6 +171,9 @@ function makeShader(regl, fragCode) {
   });
 }
 
+function setStatus() {
+}
+
 export function imageGenerator(regl, size: Point, opts:{
   type: 'image' | 'vangogh',
   imageUrl?: string,
@@ -192,25 +195,37 @@ export function imageGenerator(regl, size: Point, opts:{
   });
 
   let texture;
+  let waitImage = false;
+  let statusDiv = document.querySelector('#status')!;
   if (opts.imageUrl) {
     var image = new Image();
     image.crossOrigin = 'anonymous';
     image.src = opts.imageUrl;
     texture = regl.texture();
-    image.onload = () => texture = regl.texture(image);
+    waitImage = true;
+    statusDiv.innerHTML = 'Loading...';
+    image.onload = function() {
+      texture = regl.texture(image);
+      waitImage = false;
+      statusDiv.innerHTML = '';
+    }
+    image.onerror = function() {
+      statusDiv.innerHTML = 'Error loading image';
+    }
   }
 
   let ready = false;
   return {
     draw: () => shader({texture: texture, parameter: opts.parameter}),
     ensureData: function() {
-      if (!ready) {
+      if (!ready && !waitImage) {
         regl({framebuffer: fbo})(() => {
           shader({texture: texture, parameter: opts.parameter, framebuffer: fbo});
           regl.read({data: data});
           ready = true;
         });
       }
+      return ready;
     },
     get: function (uv: Point) {
       let [x, y] = [Math.floor(uv[0]*size[0]), Math.floor((1-uv[1])*size[1])];
