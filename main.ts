@@ -13,6 +13,7 @@ var config:any = {
 };
 window.onload = function() {
   let gui = new dat.GUI();
+  gui.remember(config);
   const readableName = (n) => n.replace(/([A-Z])/g, ' $1').toLowerCase()
   function addConfig(name, initial, min?, max?) {
     config[name] = initial;
@@ -21,7 +22,10 @@ window.onload = function() {
   addConfig('lineWidth', 0.5, 0.2, 20.0).step(.01);
   addConfig('lineLength', 0.09, 0.02, 1.0).step(.01);
   addConfig('lineSpeed', 1., 0.1, 2.0).step(.01);
-  addConfig('drawFlowField', true);
+  addConfig('wiggles', 3., 0., 5.).step(1);
+  addConfig('voronoi', true);
+  addConfig('varyFlowField', true);
+  addConfig('showFlowField', true);
   initFramebuffers();
   dragdrop.init();
   dragdrop.handlers.ondrop = function(url) {
@@ -38,7 +42,7 @@ let particles: any = {
 let reglCanvas;
 let screenCanvas;
 let sourceImageGenerator;
-let startTime:Date;
+let animateTime = 0;
 function initFramebuffers() {
   reglCanvas = document.getElementById('regl-canvas') as HTMLCanvasElement;
   screenCanvas = {
@@ -80,7 +84,6 @@ function initFramebuffers() {
 
 function initGenerator(opts) {
   sourceImageGenerator = imageGenerator(regl, [reglCanvas.width, reglCanvas.height], opts);
-  startTime = new Date();
 
   let ctxDst = screenCanvas.dst.getContext('2d') as CanvasRenderingContext2D;
   ctxDst.clearRect(0, 0, screenCanvas.dst.width, screenCanvas.dst.height);
@@ -111,9 +114,16 @@ function initParticle(i: number, uv: Point, time: number) {
   particles.birth[i*4] = time;
 }
 
+const clock = () => (performance ? performance.now() : Date.now()) / 1000.0;
+
 const commonFrag = `#version 300 es
 precision highp float;
 precision highp sampler2D;
+
+struct Options {
+  bool voronoi;
+  float wiggles;
+};
 
 float PI = 3.14159269369;
 float TAU = 6.28318530718;
@@ -163,38 +173,40 @@ vec3 hsv2rgb(vec3 c) {
   rgb = rgb * rgb * (3. - 2. * rgb);
   return c.z * mix(vec3(1.), rgb, c.y);
 }
-vec2 voronoi(vec2 st, float t) {
+vec2 voronoi(vec2 st, float t, Options options) {
   vec2 i_st = floor(st);
   vec2 f_st = fract(st);
 
-  float m_dist = 1.;  // minimum distance
+  float minDist = 1.;
   vec2 v = vec2(1., 0.);
-
-  for (int y= -1; y <= 1; y++) {
-    for (int x= -1; x <= 1; x++) {
-      vec2 neighbor = vec2(float(x), float(y));
-
-      // Random position from current + neighbor place in the grid
-      vec2 point = noise3(vec3(i_st + neighbor, t)).xy;
-      // point = 0.5 + 0.5*sin(u_time + 6.2831*point);
-
-      vec2 diff = neighbor + point - f_st;
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      vec2 cell = vec2(float(x), float(y));
+      vec2 cellCenter = noise3(vec3(i_st + cell, t*.3)).xy;
+      vec2 diff = cell + cellCenter - f_st;
       float dist = length(diff);
-      if (dist < m_dist) {
-        dist = m_dist;
+      if (dist < minDist) {
+        dist = minDist;
         v = diff;
       }
     }
   }
-  return rotate(normalize(v), PI/2.);
+  float a = 0.;
+  if (options.wiggles > 0.)
+    a = noise3(vec3(st*options.wiggles*5., t)).x*TAU/4.;
+  return rotate(normalize(v), PI/2. + a);
 }
-vec2 velocityAtPoint(vec2 p, float t) {
-  return voronoi(p*9., t*.1);
-  // t=0.;
-  // return normalize(noise3(vec3(p*7., t*.4)).xy - .5);
+vec2 velocityAtPoint(vec2 p, float t, Options options) {
+  p *= 7.;
+
+  if (options.voronoi)
+    return voronoi(p, t*.3, options);
+  vec2 v = noise3(vec3(p, t*.1)).xy;
+  float a = noise3(vec3(p*options.wiggles*5., t*.02)).x*TAU/4.;
+  return rotate(normalize(v - .5), a);
   // float f = noise3(vec3(p*7., t*.4)).x;
-  float f = .5*sin(p.x*3.2 + p.y*4.5 + t*.4) + .5*sin(p.x*p.y*TAU);
-  return rotate(vec2(1., 0.), f * TAU);
+  // float f = .5*sin(p.x*3.2 + p.y*4.5 + t*.4) + .5*sin(p.x*p.y*TAU);
+  // return rotate(vec2(1., 0.), f * TAU);
 }`;
 
 const baseVertShader = (opts) => regl(Object.assign({
@@ -224,20 +236,22 @@ const updateParticles = baseVertShader({
   uniform sampler2D birthTex;
   uniform float maxAge;
   uniform float maxSpeed;
+  uniform float clockTime;
   uniform float iTime;
   uniform vec2 iResolution;
+  uniform Options options;
 
   void maybeReset(inout vec2 pos, inout vec2 newPos) {
     float birth = texelFetch(birthTex, ivec2(gl_FragCoord.xy), 0).x;
-    float death = maxAge*(1. + .5*hash3(vec3(gl_FragCoord.xy/iResolution.xy + pos, iTime)).x);
-    if ((iTime - birth) > death || newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.) {
-      newPos = randomPoint(gl_FragCoord.xy, iTime);
+    float death = maxAge*(1. + .5*hash3(vec3(gl_FragCoord.xy/iResolution.xy + pos, clockTime)).x);
+    if ((clockTime - birth) > death || newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.) {
+      newPos = randomPoint(gl_FragCoord.xy, clockTime);
       pos = vec2(-1, -1);  // Tells the main loop that this particle was reset.
     }
   }
   void main() {
     vec2 pos = texelFetch(particlesTex, ivec2(gl_FragCoord.xy), 0).zw;
-    vec2 velocity = velocityAtPoint(pos, iTime);
+    vec2 velocity = velocityAtPoint(pos, iTime, options);
 
     vec2 newPos = pos + velocity * .003 * maxSpeed;
     maybeReset(pos, newPos);
@@ -249,8 +263,11 @@ const updateParticles = baseVertShader({
     birthTex: () => particles.birthBuffer,
     maxAge: () => Math.max(.02, config.lineLength / config.lineSpeed),
     maxSpeed: () => config.lineSpeed,
-    iTime: regl.context('time'),
+    clockTime: regl.context('time'),
+    iTime: () => animateTime,
     iResolution: (context) => [context.viewportWidth, context.viewportHeight],
+    'options.voronoi': () => config.voronoi,
+    'options.wiggles': () => config.wiggles,
   },
 });
 
@@ -259,6 +276,8 @@ const drawFlowField = baseVertShader({
   in vec2 uv;
   uniform float iTime;
   out vec4 fragColor;
+  uniform Options options;
+
   float udSegment( in vec2 p, in vec2 a, in vec2 b ) {
       vec2 ba = b-a;
       vec2 pa = p-a;
@@ -267,32 +286,37 @@ const drawFlowField = baseVertShader({
   }
   void main() {
     vec2 center = vec2(0.);
-    vec2 velocity = velocityAtPoint(uv, iTime);
+    vec2 velocity = velocityAtPoint(uv, iTime, options);
     float c = udSegment(fract(uv*64.) - .5, center, velocity);
     fragColor.rgb = vec3(1. - sign(c));
   }`,
   uniforms: {
-    iTime: regl.context('time'),
+    iTime: () => animateTime,
+    'options.voronoi': () => config.voronoi,
+    'options.wiggles': () => config.wiggles,
   },
 });
 
+let lastTime = 0;
 regl.frame(function(context) {
+  let deltaTime = context.time - lastTime;
+  lastTime = context.time;
+
   if (!particles.fbo)
     return;
 
-  // if ((new Date().getTime() - startTime.getTime()) < 10) {
-  //   sourceImageGenerator.draw();
-  //   return;
-  // }
   if (!sourceImageGenerator.ensureData())
     return;
+
+  if (config.varyFlowField)
+    animateTime += deltaTime;
 
   regl.clear({color: [0, 0, 0, 0]});
 
   updateParticles();
   particles.fbo.swap();
 
-  if (config.drawFlowField)
+  if (config.showFlowField)
     drawFlowField({});
 
   regl({framebuffer: particles.fbo.dst})(() => {
