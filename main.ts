@@ -20,10 +20,10 @@ window.onload = function() {
     return gui.add(config, name, min, max).name(readableName(name));
   }
   addConfig('lineWidth', 0.5, 0.2, 20.0).step(.01);
-  addConfig('lineLength', 0.09, 0.02, 1.0).step(.01);
-  addConfig('lineSpeed', 1., 0.1, 2.0).step(.01);
+  addConfig('lineLength', 0.1, 0.02, 1.0).step(.01);
+  addConfig('lineSpeed', 1., 0.1, 2.0).step(.1);
   addConfig('wiggles', 3., 0., 5.).step(1);
-  addConfig('voronoi', true);
+  addConfig('flowType', 'voronoi').options(['voronoi', 'smooth noise']);
   addConfig('varyFlowField', true);
   addConfig('showFlowField', true);
   initFramebuffers();
@@ -121,7 +121,7 @@ precision highp float;
 precision highp sampler2D;
 
 struct Options {
-  bool voronoi;
+  bool useVoronoi;
   float wiggles;
 };
 
@@ -173,6 +173,25 @@ vec3 hsv2rgb(vec3 c) {
   rgb = rgb * rgb * (3. - 2. * rgb);
   return c.z * mix(vec3(1.), rgb, c.y);
 }
+float noise(vec3 p) {
+  return noise3(p).x;
+}
+// Íñigo Quílez
+const mat2 m = mat2( 0.80,  0.60, -0.60,  0.80 );
+float fbm(vec3 p) {
+  float f = 0.0;
+  f += 0.500000*noise( p ); p.xy = m*p.xy*2.02;
+  f += 0.250000*noise( p ); p.xy = m*p.xy*2.03;
+  f += 0.125000*noise( p ); p.xy = m*p.xy*2.01;
+  f += 0.062500*noise( p ); p.xy = m*p.xy*2.04;
+  f += 0.031250*noise( p ); p.xy = m*p.xy*2.01;
+  f += 0.015625*noise( p );
+  return f/0.96875;
+}
+vec2 fbm2(vec3 p) {
+  return vec2(fbm(p+vec3(16.8)), fbm(p+vec3(11.5)));
+}
+
 vec2 voronoi(vec2 st, float t, Options options) {
   vec2 i_st = floor(st);
   vec2 f_st = fract(st);
@@ -182,9 +201,9 @@ vec2 voronoi(vec2 st, float t, Options options) {
   for (int y = -1; y <= 1; y++) {
     for (int x = -1; x <= 1; x++) {
       vec2 cell = vec2(float(x), float(y));
-      vec2 cellCenter = noise3(vec3(i_st + cell, t*.3)).xy;
+      vec2 cellCenter = noise3(vec3(i_st + cell, t*.1)).xy;
       vec2 diff = cell + cellCenter - f_st;
-      float dist = length(diff);
+      float dist = dot(diff, diff);
       if (dist < minDist) {
         dist = minDist;
         v = diff;
@@ -199,14 +218,14 @@ vec2 voronoi(vec2 st, float t, Options options) {
 vec2 velocityAtPoint(vec2 p, float t, Options options) {
   p *= 7.;
 
-  if (options.voronoi)
+  if (options.useVoronoi)
     return voronoi(p, t*.3, options);
-  vec2 v = noise3(vec3(p, t*.1)).xy;
-  float a = noise3(vec3(p*options.wiggles*5., t*.02)).x*TAU/4.;
-  return rotate(normalize(v - .5), a);
-  // float f = noise3(vec3(p*7., t*.4)).x;
-  // float f = .5*sin(p.x*3.2 + p.y*4.5 + t*.4) + .5*sin(p.x*p.y*TAU);
-  // return rotate(vec2(1., 0.), f * TAU);
+  // vec2 v = noise3(vec3(p,0.)).xy - .5;
+  // v = noise3(vec3(dFdx(v), 0.)).xy - .5;
+  // v = vec2(dFdx(v).x, dFdy(v).y);
+  vec2 v = fbm2(vec3(p*1.3, t*.1)) - .5;
+  float a = (noise3(vec3(p*options.wiggles*11., t*.02)).x - .5)*TAU/8.;
+  return rotate(normalize(v), a*0.);
 }`;
 
 const baseVertShader = (opts) => regl(Object.assign({
@@ -266,7 +285,7 @@ const updateParticles = baseVertShader({
     clockTime: regl.context('time'),
     iTime: () => animateTime,
     iResolution: (context) => [context.viewportWidth, context.viewportHeight],
-    'options.voronoi': () => config.voronoi,
+    'options.useVoronoi': () => config.flowType == 'voronoi',
     'options.wiggles': () => config.wiggles,
   },
 });
@@ -292,7 +311,7 @@ const drawFlowField = baseVertShader({
   }`,
   uniforms: {
     iTime: () => animateTime,
-    'options.voronoi': () => config.voronoi,
+    'options.useVoronoi': () => config.flowType == 'voronoi',
     'options.wiggles': () => config.wiggles,
   },
 });
