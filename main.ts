@@ -5,7 +5,10 @@ import * as dragdrop from "./dragdrop"
 import * as dat from "dat.gui"
 import * as guiPresets from "./gui-presets.json"
 
-const regl = Webgl2.overrideContextType(() => Regl({canvas: "#regl-canvas", extensions: ['WEBGL_draw_buffers', 'OES_texture_float', 'OES_texture_float_linear', 'OES_texture_half_float', 'ANGLE_instanced_arrays']}));
+let webgl: WebGL2RenderingContext;
+const regl = Webgl2.overrideContextType(
+  () => Regl({canvas: "#regl-canvas", extensions: ['WEBGL_draw_buffers', 'OES_texture_float', 'OES_texture_float_linear', 'OES_texture_half_float', 'ANGLE_instanced_arrays']}),
+  (gl) => webgl = gl);
 
 type Point = [number, number];
 
@@ -15,7 +18,6 @@ var config:any = {
 };
 window.onload = function() {
   let gui = new dat.GUI({load: guiPresets});
-  console.log(guiPresets);
   gui.remember(config);
   const readableName = (n) => n.replace(/([A-Z])/g, ' $1').toLowerCase()
   function addConfig(name, initial, min?, max?) {
@@ -40,7 +42,8 @@ window.onload = function() {
 };
 
 let particles: any = {
-  pixels: Float32Array,
+  positions: Float32Array,
+  colors: Float32Array,
   fbo: null,
   hue: [],
   birth: [],
@@ -61,8 +64,9 @@ function initFramebuffers() {
   loadImage(config.image);
 
   // Holds the particle positions. particles[i, 0].xyzw = {lastPosX, lastPosY, posX, posY}
-  particles.pixels = new Float32Array(config.numParticles * 4);
-  particles.fbo = createDoubleFBO(1, {
+  particles.positions = new Float32Array(config.numParticles * 4);
+  particles.colors = new Float32Array(config.numParticles * 4);
+  particles.fbo = createDoubleFBO(2, {
     type: 'float32',
     format: 'rgba',
     wrap: 'clamp',
@@ -74,16 +78,6 @@ function initFramebuffers() {
     width: config.numParticles,
     height: 1,
     data: Array.from({length: config.numParticles}, (_, i) => [-1,0,-1,0]),
-  });
-
-  particles.hue = Array.from({length: config.numParticles});
-  particles.birth = new Float32Array(config.numParticles*4);
-  particles.birthBuffer = regl.texture({
-    type: 'float32',
-    format: 'rgba',
-    width: config.numParticles,
-    height: 1,
-    data: particles.birth,
   });
 }
 
@@ -303,9 +297,12 @@ const baseVertShader = (opts) => regl(Object.assign({
 const updateParticles = baseVertShader({
   frag: commonFrag + `
   in vec2 uv;
-  out vec4 fragColor;
-  uniform sampler2D particlesTex;
-  uniform sampler2D birthTex;
+  layout(location = 0) out vec4 fragData0; // lastPos, pos
+  layout(location = 1) out vec4 fragData1; // colors.xyz, birth
+  // out vec4 fragColor;
+  uniform sampler2D particlePositions;
+  uniform sampler2D particleColors;
+  uniform sampler2D sourceImage;
   uniform float maxAge;
   uniform float maxSpeed;
   uniform float clockTime;
@@ -316,26 +313,29 @@ const updateParticles = baseVertShader({
   vec2 randomPoint(vec2 uv, float t) {
     return hash3(vec3(uv, t)).xy;
   }
-  void maybeReset(inout vec2 pos, inout vec2 newPos) {
-    float birth = texelFetch(birthTex, ivec2(gl_FragCoord.xy), 0).x;
+  void maybeReset(inout vec2 pos, inout vec2 newPos, inout vec3 color, inout float birth) {
     float death = maxAge*(1. + .5*hash3(vec3(gl_FragCoord.xy/iResolution.xy + pos, clockTime)).x);
     if ((clockTime - birth) > death || newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.) {
-      newPos = randomPoint(gl_FragCoord.xy, clockTime);
-      pos = vec2(-1, -1);  // Tells the main loop that this particle was reset.
+      pos = newPos = randomPoint(gl_FragCoord.xy, clockTime);
+      color = texture(sourceImage, pos).rgb*255.;
+      birth = clockTime;
     }
   }
   void main() {
-    vec2 pos = texelFetch(particlesTex, ivec2(gl_FragCoord.xy), 0).zw;
+    vec2 pos = texelFetch(particlePositions, ivec2(gl_FragCoord.xy), 0).zw;
     vec2 velocity = velocityAtPoint(pos, iTime, options);
 
     vec2 newPos = pos + velocity * .003 * maxSpeed;
-    maybeReset(pos, newPos);
-    fragColor = vec4(pos, newPos);
+    vec4 colors = texelFetch(particleColors, ivec2(gl_FragCoord.xy), 0);
+    maybeReset(pos, newPos, colors.rgb, colors.a);
+    fragData0 = vec4(pos, newPos);
+    fragData1 = colors;
   }`,
   framebuffer: () => particles.fbo.dst,
   uniforms: {
-    particlesTex: () => particles.fbo.src,
-    birthTex: () => particles.birthBuffer,
+    particlePositions: () => particles.fbo.src.color[0],
+    particleColors: () => particles.fbo.src.color[1],
+    sourceImage: () => sourceImageGenerator.getTex(),
     maxAge: () => Math.max(.02, config.lineLength / config.lineSpeed),
     maxSpeed: () => config.lineSpeed,
     clockTime: regl.context('time'),
@@ -396,26 +396,23 @@ regl.frame(function(context) {
 
   if (config.showFlowField)
     drawFlowField({});
- 
+
   updateParticles();
   particles.fbo.swap();
 
-  regl.read({data: particles.pixels, framebuffer: particles.fbo.dst});
+  webgl.readBuffer(webgl.COLOR_ATTACHMENT0);
+  regl.read({data: particles.positions, framebuffer: particles.fbo.dst});
+  webgl.readBuffer(webgl.COLOR_ATTACHMENT1);
+  regl.read({data: particles.colors, framebuffer: particles.fbo.dst});
 
   let ctx = screenCanvas.src.getContext('2d');
   ctx.clearRect(0, 0, screenCanvas.src.width, screenCanvas.src.height);
   if (!ctx || context.tick < 4) return;
-  for (let i = 0; i < particles.pixels.length; i += 4) {
-    let [ox, oy] = [particles.pixels[i], particles.pixels[i+1]];
-    let [px, py] = [particles.pixels[i+2], particles.pixels[i+3]];
-    if (px < 0)
-      continue;
-    if (ox < 0) {  // negative lastPos signals that this particle died
-      initParticle(Math.floor(i / 4), [px, py], context.time);
-      continue;
-    }
-    let rgba = particles.hue[Math.floor(i / 4)];
-    ctx.strokeStyle = `rgba(${rgba[0]}, ${rgba[1]}, ${rgba[2]}, 100%)`;
+  for (let i = 0; i < particles.positions.length; i += 4) {
+    let [ox, oy] = [particles.positions[i], particles.positions[i+1]];
+    let [px, py] = [particles.positions[i+2], particles.positions[i+3]];
+    let rgb = particles.colors;
+    ctx.strokeStyle = `rgba(${rgb[i]}, ${rgb[i+1]}, ${rgb[i+2]}, 100%)`;
     ctx.beginPath();
     ctx.moveTo(ox * screenCanvas.src.width, oy * screenCanvas.src.height);
     ctx.lineTo(px * screenCanvas.src.width, py * screenCanvas.src.height);
@@ -426,11 +423,5 @@ regl.frame(function(context) {
   // ctxDst.fillStyle = 'rgba(0, 0, 0, 1.5%)';
   // ctxDst.fillRect(0, 0, screenCanvas.dst.width, screenCanvas.dst.height);
   ctxDst.drawImage(screenCanvas.src, 0, 0);
-
-  particles.birthBuffer.subimage({
-    width: config.numParticles,
-    height: 1,
-    data: particles.birth
-  });
 });
 

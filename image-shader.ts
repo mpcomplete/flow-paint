@@ -227,6 +227,10 @@ export function imageGenerator(regl, size: Point, opts:{
       }
       return ready;
     },
+    getTex: function() {
+      console.log(fbo.color);
+      return fbo.color[0];
+    },
     get: function (uv: Point) {
       let [x, y] = [Math.floor(uv[0]*size[0]), Math.floor((1-uv[1])*size[1])];
       let i = 4*(y*size[0] + x);
