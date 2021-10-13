@@ -1,5 +1,7 @@
 # Flow field
 
+Live web version [here](http://mpcomplete.github.io/flow/).
+
 A graphical toy to paint images using flow fields.
 
 ## References:
