@@ -111,14 +111,6 @@ function createDoubleFBO(count, props) {
   }
 }
 
-function initParticle(i: number, uv: Point, time: number) {
-  let rgba = sourceImageGenerator.get(uv);
-  particles.hue[i] = [rgba[0]*255, rgba[1]*255, rgba[2]*255, rgba[3]*100];
-  particles.birth[i*4] = time;
-}
-
-const clock = () => (performance ? performance.now() : Date.now()) / 1000.0;
-
 const commonFrag = `#version 300 es
 precision highp float;
 precision highp sampler2D;

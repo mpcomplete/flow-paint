@@ -180,7 +180,6 @@ export function imageGenerator(regl, size: Point, opts:{
   parameter?: number, // TODO iMouse
 }) {
   const shader = makeShader(regl, shaders[opts.type]);
-  const data = new Float32Array(4 * size[0] * size[1]);
   const fbo = regl.framebuffer({
     color: regl.texture({
       type: 'float32',
@@ -221,7 +220,6 @@ export function imageGenerator(regl, size: Point, opts:{
       if (!ready && !waitImage) {
         regl({framebuffer: fbo})(() => {
           shader({texture: texture, parameter: opts.parameter, framebuffer: fbo});
-          regl.read({data: data});
           ready = true;
         });
       }
@@ -230,11 +228,6 @@ export function imageGenerator(regl, size: Point, opts:{
     getTex: function() {
       console.log(fbo.color);
       return fbo.color[0];
-    },
-    get: function (uv: Point) {
-      let [x, y] = [Math.floor(uv[0]*size[0]), Math.floor((1-uv[1])*size[1])];
-      let i = 4*(y*size[0] + x);
-      return [data[i], data[i+1], data[i+2], data[i+3]];
     },
   };
 }
