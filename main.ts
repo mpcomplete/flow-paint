@@ -309,9 +309,9 @@ const updateParticles = baseVertShader({
     return hash3(vec3(uv, t)).xy;
   }
   void maybeReset(inout vec2 pos, inout vec2 newPos, inout vec3 color, inout float birth) {
-    float death = maxAge*(1. + hash3(vec3(gl_FragCoord.xy, clockTime)).x);
+    float death = maxAge*(1. + hash3(vec3(gl_FragCoord.xy+17., clockTime)).x);
     if ((clockTime - birth) > death || newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.) {
-      pos = newPos = randomPoint(gl_FragCoord.xy, clockTime);
+      pos = newPos = randomPoint(vec2(gl_FragCoord.xy), clockTime);
       pos = vec2(-1., -1.);
       color = texture(sourceImage, newPos).rgb*255.;
       birth = clockTime;
@@ -330,7 +330,7 @@ const updateParticles = baseVertShader({
 
     vec2 pos = texelFetch(particlePositions, ijRead, 0).zw;
     vec2 velocity = velocityAtPoint(pos, iTime, options);
-    vec2 newPos = pos + velocity * .0015 * maxSpeed;
+    vec2 newPos = pos + velocity * .002 * maxSpeed;
 
     vec4 colors = texelFetch(particleColors, ijRead, 0);
 
@@ -402,7 +402,7 @@ regl.frame(function(context) {
     return;
 
   if (config.varyFlowField)
-    animateTime += 1000/60.;
+    animateTime += 1./30.;
 
   regl.clear({color: [0, 0, 0, 0]});
 
