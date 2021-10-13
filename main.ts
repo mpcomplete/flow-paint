@@ -54,12 +54,9 @@ let sourceImageGenerator;
 let animateTime = 0;
 function initFramebuffers() {
   reglCanvas = document.getElementById('regl-canvas') as HTMLCanvasElement;
-  screenCanvas = {
-    dst: document.getElementById('screen') as HTMLCanvasElement,
-    src: document.createElement('canvas') as HTMLCanvasElement,
-  }
-  reglCanvas.width = screenCanvas.src.width = screenCanvas.dst.width = window.innerWidth;
-  reglCanvas.height = screenCanvas.src.height = screenCanvas.dst.height = window.innerHeight;
+  screenCanvas = document.getElementById('screen') as HTMLCanvasElement;
+  reglCanvas.width = screenCanvas.width = window.innerWidth;
+  reglCanvas.height = screenCanvas.height = window.innerHeight;
 
   loadImage(config.image);
 
@@ -88,8 +85,8 @@ function initGenerator(opts) {
 }
 
 function clearScreen() {
-  let ctxDst = screenCanvas.dst.getContext('2d') as CanvasRenderingContext2D;
-  ctxDst.clearRect(0, 0, screenCanvas.dst.width, screenCanvas.dst.height);
+  let ctxDst = screenCanvas.getContext('2d') as CanvasRenderingContext2D;
+  ctxDst.clearRect(0, 0, screenCanvas.width, screenCanvas.height);
 }
 
 function createFBO(count, props) {
@@ -389,16 +386,21 @@ regl.frame(function(context) {
   if (config.showFlowField)
     drawFlowField({});
 
+  let t1 = performance.now();
+
   updateParticles();
   particles.fbo.swap();
+
+  let t2 = performance.now();
 
   webgl.readBuffer(webgl.COLOR_ATTACHMENT0);
   regl.read({data: particles.positions, framebuffer: particles.fbo.dst});
   webgl.readBuffer(webgl.COLOR_ATTACHMENT1);
   regl.read({data: particles.colors, framebuffer: particles.fbo.dst});
 
-  let ctx = screenCanvas.src.getContext('2d');
-  ctx.clearRect(0, 0, screenCanvas.src.width, screenCanvas.src.height);
+  let t3 = performance.now();
+
+  let ctx = screenCanvas.getContext('2d');
   if (!ctx || context.tick < 4) return;
   for (let i = 0; i < particles.positions.length; i += 4) {
     let [ox, oy] = [particles.positions[i], particles.positions[i+1]];
@@ -406,14 +408,13 @@ regl.frame(function(context) {
     let rgb = particles.colors;
     ctx.strokeStyle = `rgba(${rgb[i]}, ${rgb[i+1]}, ${rgb[i+2]}, 100%)`;
     ctx.beginPath();
-    ctx.moveTo(ox * screenCanvas.src.width, oy * screenCanvas.src.height);
-    ctx.lineTo(px * screenCanvas.src.width, py * screenCanvas.src.height);
+    ctx.moveTo(ox * screenCanvas.width, oy * screenCanvas.height);
+    ctx.lineTo(px * screenCanvas.width, py * screenCanvas.height);
     ctx.lineWidth = config.lineWidth;
     ctx.stroke();
   }
-  let ctxDst = screenCanvas.dst.getContext('2d') as CanvasRenderingContext2D;
-  // ctxDst.fillStyle = 'rgba(0, 0, 0, 1.5%)';
-  // ctxDst.fillRect(0, 0, screenCanvas.dst.width, screenCanvas.dst.height);
-  ctxDst.drawImage(screenCanvas.src, 0, 0);
+  let t4 = performance.now();
+
+  // console.log(t2 - t1, t3 - t2, t4 - t3);
 });
 

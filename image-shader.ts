@@ -143,7 +143,7 @@ function makeShader(regl, fragCode) {
     out vec2 uv;
     void main () {
       uv = position * 0.5 + 0.5;
-      gl_Position = vec4(position.x, -position.y, 0.0, 1.0);
+      gl_Position = vec4(position.x, position.y, 0.0, 1.0);
     }`,
     frag: `#version 300 es
     precision mediump float;
@@ -225,9 +225,6 @@ export function imageGenerator(regl, size: Point, opts:{
       }
       return ready;
     },
-    getTex: function() {
-      console.log(fbo.color);
-      return fbo.color[0];
-    },
+    getTex: () => fbo.color[0],
   };
 }
