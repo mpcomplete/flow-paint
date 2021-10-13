@@ -29,8 +29,8 @@ window.onload = function() {
   }
   addConfig('image', 'starry').options(['starry', 'face', 'forest', 'landscape', 'tree', 'try drag and drop']).onFinishChange((v) => loadImage(v));
   addConfig('lineWidth', 0.5, 0.2, 20.0).step(.01);
-  addConfig('lineLength', 0.1, 0.02, 10.0).step(.01);
-  addConfig('lineSpeed', 1., 0.1, 2.0).step(.1);
+  addConfig('lineLength', 1, 1, 50.0).step(1);
+  addConfig('lineSpeed', 1., 1., 5.0).step(.1);
   addConfig('variance', 1., 0.1, 3.).step(.1);
   addConfig('jaggies', 3., 0., 5.).step(1);
   addConfig('flowType', 'voronoi').options(['voronoi', 'fractal', 'simplex', 'sinusoid']);
@@ -309,7 +309,7 @@ const updateParticles = baseVertShader({
     return hash3(vec3(uv, t)).xy;
   }
   void maybeReset(inout vec2 pos, inout vec2 newPos, inout vec3 color, inout float birth) {
-    float death = maxAge*(1. + .5*hash3(vec3(gl_FragCoord.xy, clockTime)).x);
+    float death = maxAge*(1. + hash3(vec3(gl_FragCoord.xy, clockTime)).x);
     if ((clockTime - birth) > death || newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.) {
       pos = newPos = randomPoint(gl_FragCoord.xy, clockTime);
       pos = vec2(-1., -1.);
@@ -330,7 +330,7 @@ const updateParticles = baseVertShader({
 
     vec2 pos = texelFetch(particlePositions, ijRead, 0).zw;
     vec2 velocity = velocityAtPoint(pos, iTime, options);
-    vec2 newPos = pos + velocity * .002 * maxSpeed;
+    vec2 newPos = pos + velocity * .0015 * maxSpeed;
 
     vec4 colors = texelFetch(particleColors, ijRead, 0);
 
@@ -346,9 +346,9 @@ const updateParticles = baseVertShader({
     readIdx: regl.prop('readIdx'),
     writeIdx: regl.prop('writeIdx'),
     // TODO: move to options
-    maxAge: () => Math.max(.02, config.lineLength / config.lineSpeed),
+    maxAge: () => config.lineLength,
     maxSpeed: () => config.lineSpeed,
-    clockTime: regl.context('time'),
+    clockTime: (_, props) => (currentTick + props.writeIdx),
     iTime: () => animateTime,
     iResolution: (context) => [context.viewportWidth, context.viewportHeight],
     'options.useVoronoi': () => config.flowType == 'voronoi',
@@ -402,7 +402,7 @@ regl.frame(function(context) {
     return;
 
   if (config.varyFlowField)
-    animateTime += deltaTime;
+    animateTime += 1000/60.;
 
   regl.clear({color: [0, 0, 0, 0]});
 
