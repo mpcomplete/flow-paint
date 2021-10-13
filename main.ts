@@ -303,7 +303,7 @@ const updateParticles = baseVertShader({
     return hash3(vec3(uv, t)).xy;
   }
   void maybeReset(inout vec2 pos, inout vec2 newPos, inout vec3 color, inout float birth) {
-    float death = maxAge*(1. + .5*hash3(vec3(uv + pos, clockTime)).x);
+    float death = maxAge*(1. + .5*hash3(vec3(gl_FragCoord.xy, clockTime)).x);
     if ((clockTime - birth) > death || newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.) {
       pos = newPos = randomPoint(gl_FragCoord.xy, clockTime);
       color = texture(sourceImage, pos).rgb*255.;
@@ -345,11 +345,12 @@ const drawFlowField = baseVertShader({
   out vec4 fragColor;
   uniform Options options;
 
+  // Íñigo Quílez
   float udSegment( in vec2 p, in vec2 a, in vec2 b ) {
-      vec2 ba = b-a;
-      vec2 pa = p-a;
-      float h =clamp( dot(pa,ba)/(1.1*dot(ba,ba)), 0.0, 1.0 );
-      return length(pa-h*ba) - .05;
+    vec2 ba = b-a;
+    vec2 pa = p-a;
+    float h = clamp( dot(pa,ba)/(1.1*dot(ba,ba)), 0.0, 1.0 );
+    return length(pa-h*ba) - .05;
   }
   void main() {
     vec2 center = vec2(0.);
