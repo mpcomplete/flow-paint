@@ -394,39 +394,38 @@ regl.frame(function(context) {
 
   regl.clear({color: [0, 0, 0, 0]});
 
+  if (config.showFlowField)
+    drawFlowField({});
+ 
   updateParticles();
   particles.fbo.swap();
 
-  if (config.showFlowField)
-    drawFlowField({});
+  regl.read({data: particles.pixels, framebuffer: particles.fbo.dst});
 
-  regl({framebuffer: particles.fbo.dst})(() => {
-    regl.read(particles.pixels);
-    let ctx = screenCanvas.src.getContext('2d');
-    ctx.clearRect(0, 0, screenCanvas.src.width, screenCanvas.src.height);
-    if (!ctx || context.tick < 4) return;
-    for (let i = 0; i < particles.pixels.length; i += 4) {
-      let [ox, oy] = [particles.pixels[i], particles.pixels[i+1]];
-      let [px, py] = [particles.pixels[i+2], particles.pixels[i+3]];
-      if (px < 0)
-        continue;
-      if (ox < 0) {  // negative lastPos signals that this particle died
-        initParticle(Math.floor(i / 4), [px, py], context.time);
-        continue;
-      }
-      let rgba = particles.hue[Math.floor(i / 4)];
-      ctx.strokeStyle = `rgba(${rgba[0]}, ${rgba[1]}, ${rgba[2]}, ${rgba[3]}%)`;
-      ctx.beginPath();
-      ctx.moveTo(ox * screenCanvas.src.width, oy * screenCanvas.src.height);
-      ctx.lineTo(px * screenCanvas.src.width, py * screenCanvas.src.height);
-      ctx.lineWidth = config.lineWidth;
-      ctx.stroke();
+  let ctx = screenCanvas.src.getContext('2d');
+  ctx.clearRect(0, 0, screenCanvas.src.width, screenCanvas.src.height);
+  if (!ctx || context.tick < 4) return;
+  for (let i = 0; i < particles.pixels.length; i += 4) {
+    let [ox, oy] = [particles.pixels[i], particles.pixels[i+1]];
+    let [px, py] = [particles.pixels[i+2], particles.pixels[i+3]];
+    if (px < 0)
+      continue;
+    if (ox < 0) {  // negative lastPos signals that this particle died
+      initParticle(Math.floor(i / 4), [px, py], context.time);
+      continue;
     }
-    let ctxDst = screenCanvas.dst.getContext('2d') as CanvasRenderingContext2D;
-    // ctxDst.fillStyle = 'rgba(0, 0, 0, 1.5%)';
-    // ctxDst.fillRect(0, 0, screenCanvas.dst.width, screenCanvas.dst.height);
-    ctxDst.drawImage(screenCanvas.src, 0, 0);
-  });
+    let rgba = particles.hue[Math.floor(i / 4)];
+    ctx.strokeStyle = `rgba(${rgba[0]}, ${rgba[1]}, ${rgba[2]}, 100%)`;
+    ctx.beginPath();
+    ctx.moveTo(ox * screenCanvas.src.width, oy * screenCanvas.src.height);
+    ctx.lineTo(px * screenCanvas.src.width, py * screenCanvas.src.height);
+    ctx.lineWidth = config.lineWidth;
+    ctx.stroke();
+  }
+  let ctxDst = screenCanvas.dst.getContext('2d') as CanvasRenderingContext2D;
+  // ctxDst.fillStyle = 'rgba(0, 0, 0, 1.5%)';
+  // ctxDst.fillRect(0, 0, screenCanvas.dst.width, screenCanvas.dst.height);
+  ctxDst.drawImage(screenCanvas.src, 0, 0);
 
   particles.birthBuffer.subimage({
     width: config.numParticles,
