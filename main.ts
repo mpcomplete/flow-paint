@@ -16,7 +16,7 @@ type Point = [number, number];
 
 var config:any = {
   numParticles: 10000,
-  numSegments: 10,
+  numSegments: 3,
   clear: () => clearScreen(),
 };
 window.onload = function() {
@@ -423,22 +423,22 @@ regl.frame(function(context) {
   let t3 = performance.now();
 
   let ctx = screenCanvas.getContext('2d');
+  ctx.lineWidth = config.lineWidth;
   if (!ctx || context.tick < 4) return;
+  let rgb = particles.colors;
   for (let part = 0; part < config.numParticles; part++) {
+    let i = part*4;
+    let [ox, oy] = [particles.positions[i+2], particles.positions[i+3]];
+    ctx.beginPath();
+    ctx.moveTo(ox * screenCanvas.width, oy * screenCanvas.height);
     for (let seg = 0; seg+1 < config.numSegments; seg++) {
-      let i = seg*config.numParticles*4 + part*4;
       let ni = (seg+1)*config.numParticles*4 + part*4;
-      let [ox, oy] = [particles.positions[i+2], particles.positions[i+3]];
       let [px, py] = [particles.positions[ni+2], particles.positions[ni+3]];
       // if (part < 3) {
       //   console.log(`particle ${part} = ${ox},${oy} to ${px},${py}`);
       // }
-      let rgb = particles.colors;
-      ctx.strokeStyle = `rgba(${rgb[i]}, ${rgb[i+1]}, ${rgb[i+2]}, 100%)`;
-      ctx.beginPath();
-      ctx.moveTo(ox * screenCanvas.width, oy * screenCanvas.height);
+      ctx.strokeStyle = `rgba(${rgb[ni]}, ${rgb[ni+1]}, ${rgb[ni+2]}, 100%)`;
       ctx.lineTo(px * screenCanvas.width, py * screenCanvas.height);
-      ctx.lineWidth = config.lineWidth;
       ctx.stroke();
     }
   }
