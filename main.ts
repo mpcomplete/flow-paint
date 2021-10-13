@@ -12,11 +12,11 @@ const regl = Webgl2.overrideContextType(
   () => Regl({canvas: "#regl-canvas", extensions: ['WEBGL_draw_buffers', 'OES_texture_float', 'OES_texture_float_linear', 'OES_texture_half_float', 'ANGLE_instanced_arrays']}),
   (gl) => webgl = gl);
 
-type Point = [number, number];
 
 var config:any = {
   numParticles: 10000,
-  numSegments: 10,
+  // This is an optimization: Keep a history of 30 frames (line segments) so we only have to read the particle pixel buffer (which is slow) once per 30 frames.
+  numSegments: 30,
   clear: () => clearScreen(),
 };
 window.onload = function() {
@@ -311,7 +311,7 @@ const updateParticles = baseVertShader({
   void maybeReset(inout vec2 pos, inout vec2 newPos, inout vec3 color, inout float birth) {
     float death = maxAge*(1. + hash3(vec3(gl_FragCoord.xy+17., clockTime)).x);
     if ((clockTime - birth) > death || newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.) {
-      pos = newPos = randomPoint(vec2(gl_FragCoord.xy), clockTime);
+      newPos = randomPoint(vec2(gl_FragCoord.xy), clockTime);
       pos = vec2(-1., -1.);
       color = texture(sourceImage, newPos).rgb*255.;
       birth = clockTime;
@@ -348,7 +348,7 @@ const updateParticles = baseVertShader({
     // TODO: move to options
     maxAge: () => config.lineLength,
     maxSpeed: () => config.lineSpeed,
-    clockTime: (_, props) => (currentTick + props.writeIdx),
+    clockTime: () => currentTick,
     iTime: () => animateTime,
     iResolution: (context) => [context.viewportWidth, context.viewportHeight],
     'options.useVoronoi': () => config.flowType == 'voronoi',
@@ -411,12 +411,12 @@ regl.frame(function(context) {
 
   let t1 = performance.now();
 
+  let readIdx = (currentTick) % config.numSegments;
   let writeIdx = (currentTick+1) % config.numSegments;
+  updateParticles({readIdx: readIdx, writeIdx: writeIdx});
+  particles.fbo.swap();
+
   if (writeIdx == 0) {
-    for (let i = 0; i < config.numSegments; i++) {
-      updateParticles({readIdx: (i-1 + config.numSegments) % config.numSegments, writeIdx: i});
-      particles.fbo.swap();
-    }
     webgl.readBuffer(webgl.COLOR_ATTACHMENT0);
     regl.read({data: particles.positions, framebuffer: particles.fbo.src});
     webgl.readBuffer(webgl.COLOR_ATTACHMENT1);
@@ -443,6 +443,7 @@ regl.frame(function(context) {
     ctx.stroke();
     ox = px; oy = py;
   }
+
   let t3 = performance.now();
 
   currentTick++;
