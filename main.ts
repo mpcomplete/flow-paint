@@ -35,11 +35,11 @@ window.onload = function() {
   addConfig('varyFlowField', true);
   addConfig('showFlowField', true);
   gui.add(config, 'clear');
+
   initFramebuffers();
+
   dragdrop.init();
-  dragdrop.handlers.ondrop = function(url) {
-    initImageLoader(url);
-  };
+  dragdrop.handlers.ondrop = (url) => initImageLoader(url);
 };
 
 let particles: any = {
