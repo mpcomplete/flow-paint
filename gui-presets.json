@@ -1,0 +1,72 @@
+{
+  "preset": "Starry Eve",
+  "closed": false,
+  "remembered": {
+    "Starry Eve": {
+      "0": {
+        "image": "starry",
+        "lineWidth": 0.5,
+        "lineLength": 0.2,
+        "lineSpeed": 1,
+        "variance": 1,
+        "jaggies": 3,
+        "flowType": "sinusoid",
+        "varyFlowField": true,
+        "showFlowField": false
+      }
+    },
+    "Oil Painting": {
+      "0": {
+        "image": "forest",
+        "lineWidth": 2,
+        "lineLength": 0.35,
+        "lineSpeed": 1,
+        "variance": 1,
+        "jaggies": 5,
+        "flowType": "voronoi",
+        "varyFlowField": true,
+        "showFlowField": false
+      }
+    },
+    "Fuzzy Face": {
+      "0": {
+        "image": "face",
+        "lineWidth": 0.3,
+        "lineLength": 0.1,
+        "lineSpeed": 1,
+        "variance": 0.5,
+        "jaggies": 3,
+        "flowType": "fractal",
+        "varyFlowField": true,
+        "showFlowField": false
+      }
+    },
+    "Windy Tree": {
+      "0": {
+        "image": "tree",
+        "lineWidth": 0.5,
+        "lineLength": 0.2,
+        "lineSpeed": 1,
+        "variance": 1,
+        "jaggies": 1,
+        "flowType": "fractal",
+        "varyFlowField": true,
+        "showFlowField": false
+      }
+    },
+    "Fiery Sunset": {
+      "0": {
+        "image": "landscape",
+        "lineWidth": 0.5,
+        "lineLength": 0.2,
+        "lineSpeed": 1,
+        "variance": 1,
+        "jaggies": 3,
+        "flowType": "fractal",
+        "varyFlowField": true,
+        "showFlowField": false
+      }
+    }
+  },
+  "folders": {}
+}

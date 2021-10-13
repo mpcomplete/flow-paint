@@ -3,6 +3,7 @@ import * as Webgl2 from "./regl-webgl2-compat.js"
 import { imageGenerator } from "./image-shader"
 import * as dragdrop from "./dragdrop"
 import * as dat from "dat.gui"
+import * as guiPresets from "./gui-presets.json"
 
 const regl = Webgl2.overrideContextType(() => Regl({canvas: "#regl-canvas", extensions: ['WEBGL_draw_buffers', 'OES_texture_float', 'OES_texture_float_linear', 'OES_texture_half_float', 'ANGLE_instanced_arrays']}));
 
@@ -13,13 +14,15 @@ var config:any = {
   clear: () => clearScreen(),
 };
 window.onload = function() {
-  let gui = new dat.GUI();
+  let gui = new dat.GUI({load: guiPresets});
+  console.log(guiPresets);
   gui.remember(config);
   const readableName = (n) => n.replace(/([A-Z])/g, ' $1').toLowerCase()
   function addConfig(name, initial, min?, max?) {
     config[name] = initial;
     return gui.add(config, name, min, max).name(readableName(name));
   }
+  addConfig('image', 'starry').options(['starry', 'face', 'forest', 'landscape', 'tree', 'try drag and drop']).onFinishChange((v) => loadImage(v));
   addConfig('lineWidth', 0.5, 0.2, 20.0).step(.01);
   addConfig('lineLength', 0.1, 0.02, 1.0).step(.01);
   addConfig('lineSpeed', 1., 0.1, 2.0).step(.1);
@@ -55,8 +58,7 @@ function initFramebuffers() {
   reglCanvas.width = screenCanvas.src.width = screenCanvas.dst.width = window.innerWidth;
   reglCanvas.height = screenCanvas.src.height = screenCanvas.dst.height = window.innerHeight;
 
-  // initGenerator({type: 'vangogh', parameter: 0.0});
-  initGenerator({type: 'image', imageUrl: 'images/starry.jpg'});
+  loadImage(config.image);
 
   // Holds the particle positions. particles[i, 0].xyzw = {lastPosX, lastPosY, posX, posY}
   particles.pixels = new Float32Array(config.numParticles * 4);
@@ -85,6 +87,7 @@ function initFramebuffers() {
   });
 }
 
+const loadImage = (name) => initGenerator({type: 'image', imageUrl: `images/${name}.jpg`});
 function initGenerator(opts) {
   sourceImageGenerator = imageGenerator(regl, [reglCanvas.width, reglCanvas.height], opts);
   clearScreen();
