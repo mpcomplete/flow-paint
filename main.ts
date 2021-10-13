@@ -16,7 +16,7 @@ type Point = [number, number];
 
 var config:any = {
   numParticles: 10000,
-  numSegments: 5,
+  numSegments: 10,
   clear: () => clearScreen(),
 };
 window.onload = function() {
@@ -390,6 +390,7 @@ const drawFlowField = baseVertShader({
 });
 
 let lastTime = 0;
+let currentTick = config.numSegments-1;
 regl.frame(function(context) {
   let deltaTime = context.time - lastTime;
   lastTime = context.time;
@@ -410,41 +411,41 @@ regl.frame(function(context) {
 
   let t1 = performance.now();
 
-  for (let i = 0; i < config.numSegments; i++) {
-    updateParticles({readIdx: (i-1 + config.numSegments) % config.numSegments, writeIdx: i});
-    particles.fbo.swap();
+  let writeIdx = (currentTick+1) % config.numSegments;
+  if (writeIdx == 0) {
+    for (let i = 0; i < config.numSegments; i++) {
+      updateParticles({readIdx: (i-1 + config.numSegments) % config.numSegments, writeIdx: i});
+      particles.fbo.swap();
+    }
+    webgl.readBuffer(webgl.COLOR_ATTACHMENT0);
+    regl.read({data: particles.positions, framebuffer: particles.fbo.src});
+    webgl.readBuffer(webgl.COLOR_ATTACHMENT1);
+    regl.read({data: particles.colors, framebuffer: particles.fbo.src});
   }
+
   let t2 = performance.now();
-
-  webgl.readBuffer(webgl.COLOR_ATTACHMENT0);
-  regl.read({data: particles.positions, framebuffer: particles.fbo.src});
-  webgl.readBuffer(webgl.COLOR_ATTACHMENT1);
-  regl.read({data: particles.colors, framebuffer: particles.fbo.src});
-
-  let t3 = performance.now();
 
   let ctx = screenCanvas.getContext('2d');
   ctx.lineWidth = config.lineWidth;
   if (!ctx || context.tick < 4) return;
   let rgb = particles.colors;
   for (let part = 0; part < config.numParticles; part++) {
-    for (let seg = 0; seg < config.numSegments; seg++) {
-      let i = seg*config.numParticles*4 + part*4;
-      let [ox, oy] = [particles.positions[i], particles.positions[i+1]];
-      let [px, py] = [particles.positions[i+2], particles.positions[i+3]];
-      if (particles.positions[i] < 0.) {
-        continue;
-      }
-      ctx.beginPath();
-      ctx.moveTo(ox * screenCanvas.width, oy * screenCanvas.height);
-      ctx.lineTo(px * screenCanvas.width, py * screenCanvas.height);
-      ctx.strokeStyle = `rgba(${rgb[i]}, ${rgb[i+1]}, ${rgb[i+2]}, 100%)`;
-      ctx.stroke();
-      ox = px; oy = py;
+    let i = writeIdx*config.numParticles*4 + part*4;
+    let [ox, oy] = [particles.positions[i], particles.positions[i+1]];
+    let [px, py] = [particles.positions[i+2], particles.positions[i+3]];
+    if (particles.positions[i] < 0.) {
+      continue;
     }
+    ctx.beginPath();
+    ctx.moveTo(ox * screenCanvas.width, oy * screenCanvas.height);
+    ctx.lineTo(px * screenCanvas.width, py * screenCanvas.height);
+    ctx.strokeStyle = `rgba(${rgb[i]}, ${rgb[i+1]}, ${rgb[i+2]}, 100%)`;
+    ctx.stroke();
+    ox = px; oy = py;
   }
-  let t4 = performance.now();
+  let t3 = performance.now();
 
-  console.log(`frame=${deltaTime.toFixed(2)}`, (t2 - t1).toFixed(2), (t3 - t2).toFixed(2), (t4 - t3).toFixed(2));
+  currentTick++;
+  console.log(`frame=${deltaTime.toFixed(2)}`, (t2 - t1).toFixed(2), (t3 - t2).toFixed(2));
 });
 
