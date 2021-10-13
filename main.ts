@@ -2,7 +2,6 @@
 
 import * as Regl from "regl"
 import * as Webgl2 from "./regl-webgl2-compat.js"
-import { imageGenerator } from "./image-shader"
 import * as dragdrop from "./dragdrop"
 import * as dat from "dat.gui"
 import * as guiPresets from "./gui-presets.json"
@@ -11,7 +10,6 @@ let webgl: WebGL2RenderingContext;
 const regl = Webgl2.overrideContextType(
   () => Regl({canvas: "#regl-canvas", extensions: ['WEBGL_draw_buffers', 'OES_texture_float', 'OES_texture_float_linear', 'OES_texture_half_float', 'ANGLE_instanced_arrays']}),
   (gl) => webgl = gl);
-
 
 var config:any = {
   numParticles: 10000,
@@ -27,7 +25,7 @@ window.onload = function() {
     config[name] = initial;
     return gui.add(config, name, min, max).name(readableName(name));
   }
-  addConfig('image', 'starry').options(['starry', 'face', 'forest', 'landscape', 'tree', 'try drag and drop']).onFinishChange((v) => loadImage(v));
+  addConfig('image', 'starry').options(['starry', 'face', 'forest', 'landscape', 'tree', 'try drag and drop']).onFinishChange((v) => loadImageAsset(v));
   addConfig('lineWidth', 0.5, 0.2, 20.0).step(.01);
   addConfig('lineLength', 1, 1, 50.0).step(1);
   addConfig('lineSpeed', 1., 1., 5.0).step(.1);
@@ -40,7 +38,7 @@ window.onload = function() {
   initFramebuffers();
   dragdrop.init();
   dragdrop.handlers.ondrop = function(url) {
-    initGenerator({type: 'image', imageUrl: url});
+    initImageLoader(url);
   };
 };
 
@@ -48,20 +46,17 @@ let particles: any = {
   positions: Float32Array,
   colors: Float32Array,
   fbo: null,
-  hue: [],
-  birth: [],
 };
 let reglCanvas;
 let screenCanvas;
-let sourceImageGenerator;
+let sourceImageLoader;
 let animateTime = 0;
+let currentTick = 0;
 function initFramebuffers() {
   reglCanvas = document.getElementById('regl-canvas') as HTMLCanvasElement;
   screenCanvas = document.getElementById('screen') as HTMLCanvasElement;
   reglCanvas.width = screenCanvas.width = window.innerWidth;
   reglCanvas.height = screenCanvas.height = window.innerHeight;
-
-  loadImage(config.image);
 
   // Holds the particle position. particles[i, 0].xyzw = {lastPosX, lastPosY, posX, posY}
   particles.positions = new Float32Array(config.numParticles * 4 * config.numSegments);
@@ -75,22 +70,42 @@ function initFramebuffers() {
     height: config.numSegments,
   });
 
-  particles.fbo.src.color[0].subimage({ // position
-    width: config.numParticles,
-    height: config.numSegments,
-    data: Array.from({length: config.numParticles*config.numSegments}, (_, i) => [-1,-1,-1,-1]),
-  });
+  loadImageAsset(config.image);
 }
 
-const loadImage = (name) => initGenerator({type: 'image', imageUrl: `images/${name}.jpg`});
-function initGenerator(opts) {
-  sourceImageGenerator = imageGenerator(regl, [reglCanvas.width, reglCanvas.height], opts);
+const loadImageAsset = (name) => initImageLoader(`images/${name}.jpg`);
+function initImageLoader(imageUrl) {
+  let texture;
+  let statusDiv = document.querySelector('#status')!;
+  let image = new Image();
+  image.crossOrigin = 'anonymous';
+  image.src = imageUrl;
+  statusDiv.innerHTML = 'Loading...';
+  image.onload = function() {
+    texture = regl.texture(image);
+    statusDiv.innerHTML = '';
+  }
+  image.onerror = function() {
+    statusDiv.innerHTML = 'Error loading image';
+  }
+
+  sourceImageLoader = {
+    getTexture: () => texture,
+  };
   clearScreen();
 }
 
 function clearScreen() {
   let ctxDst = screenCanvas.getContext('2d') as CanvasRenderingContext2D;
   ctxDst.clearRect(0, 0, screenCanvas.width, screenCanvas.height);
+
+  currentTick = 0;
+
+  particles.fbo.src.color[0].subimage({ // position
+    width: config.numParticles,
+    height: config.numSegments,
+    data: Array.from({length: config.numParticles*config.numSegments}, (_, i) => [-1,-1,-1,-1]),
+  });
 }
 
 function createFBO(count, props) {
@@ -308,12 +323,28 @@ const updateParticles = baseVertShader({
   vec2 randomPoint(vec2 uv, float t) {
     return hash3(vec3(uv, t)).xy;
   }
+  vec4 sampleTexture(in vec2 uv) {
+    vec2 tsize = vec2(textureSize(sourceImage, 0));
+    vec2 scale = vec2(iResolution.x/tsize.x, iResolution.y/tsize.y);
+    vec2 uvScaled = uv;
+    if (scale.x > scale.y) {
+      // We scaled in y (the smaller dim). Center uv, scale it, and un-center it.
+      uvScaled.x -= .5;
+      uvScaled.x *= scale.x/scale.y;
+      uvScaled.x += .5;
+    } else {
+      uvScaled.y -= .5;
+      uvScaled.y *= scale.y/scale.x;
+      uvScaled.y += .5;
+    }
+    return texture(sourceImage, uvScaled);
+  }
   void maybeReset(inout vec2 pos, inout vec2 newPos, inout vec3 color, inout float birth) {
     float death = maxAge*(1. + hash3(vec3(gl_FragCoord.xy+17., clockTime)).x);
     if ((clockTime - birth) > death || newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.) {
       newPos = randomPoint(vec2(gl_FragCoord.xy), clockTime);
       pos = vec2(-1., -1.);
-      color = texture(sourceImage, newPos).rgb*255.;
+      color = sampleTexture(newPos).rgb*255.;
       birth = clockTime;
     }
   }
@@ -342,7 +373,7 @@ const updateParticles = baseVertShader({
   uniforms: {
     particlePositions: () => particles.fbo.src.color[0],
     particleColors: () => particles.fbo.src.color[1],
-    sourceImage: () => sourceImageGenerator.getTex(),
+    sourceImage: () => sourceImageLoader.getTexture(),
     readIdx: regl.prop('readIdx'),
     writeIdx: regl.prop('writeIdx'),
     // TODO: move to options
@@ -350,7 +381,7 @@ const updateParticles = baseVertShader({
     maxSpeed: () => config.lineSpeed,
     clockTime: () => currentTick,
     iTime: () => animateTime,
-    iResolution: (context) => [context.viewportWidth, context.viewportHeight],
+    iResolution: () => [screenCanvas.width, screenCanvas.height],
     'options.useVoronoi': () => config.flowType == 'voronoi',
     'options.useFBM': () => config.flowType == 'fractal',
     'options.useSimplex': () => config.flowType == 'simplex',
@@ -390,7 +421,6 @@ const drawFlowField = baseVertShader({
 });
 
 let lastTime = 0;
-let currentTick = config.numSegments-1;
 regl.frame(function(context) {
   let deltaTime = context.time - lastTime;
   lastTime = context.time;
@@ -398,7 +428,7 @@ regl.frame(function(context) {
   if (!particles.fbo)
     return;
 
-  if (!sourceImageGenerator.ensureData())
+  if (!sourceImageLoader.getTexture())
     return;
 
   if (config.varyFlowField)
@@ -411,8 +441,8 @@ regl.frame(function(context) {
 
   let t1 = performance.now();
 
-  let readIdx = (currentTick) % config.numSegments;
-  let writeIdx = (currentTick+1) % config.numSegments;
+  let readIdx = (currentTick-1 + config.numSegments) % config.numSegments;
+  let writeIdx = (currentTick) % config.numSegments;
   updateParticles({readIdx: readIdx, writeIdx: writeIdx});
   particles.fbo.swap();
 
