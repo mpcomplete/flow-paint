@@ -16,7 +16,7 @@ type Point = [number, number];
 
 var config:any = {
   numParticles: 10000,
-  numSegments: 3,
+  numSegments: 5,
   clear: () => clearScreen(),
 };
 window.onload = function() {
@@ -312,7 +312,8 @@ const updateParticles = baseVertShader({
     float death = maxAge*(1. + .5*hash3(vec3(gl_FragCoord.xy, clockTime)).x);
     if ((clockTime - birth) > death || newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.) {
       pos = newPos = randomPoint(gl_FragCoord.xy, clockTime);
-      color = texture(sourceImage, pos).rgb*255.;
+      pos = vec2(-1., -1.);
+      color = texture(sourceImage, newPos).rgb*255.;
       birth = clockTime;
     }
   }
@@ -329,7 +330,7 @@ const updateParticles = baseVertShader({
 
     vec2 pos = texelFetch(particlePositions, ijRead, 0).zw;
     vec2 velocity = velocityAtPoint(pos, iTime, options);
-    vec2 newPos = pos + velocity * .003 * maxSpeed;
+    vec2 newPos = pos + velocity * .002 * maxSpeed;
 
     vec4 colors = texelFetch(particleColors, ijRead, 0);
 
@@ -410,7 +411,7 @@ regl.frame(function(context) {
   let t1 = performance.now();
 
   for (let i = 0; i < config.numSegments; i++) {
-    updateParticles({readIdx: i, writeIdx: (i+1) % config.numSegments});
+    updateParticles({readIdx: (i-1 + config.numSegments) % config.numSegments, writeIdx: i});
     particles.fbo.swap();
   }
   let t2 = performance.now();
@@ -427,23 +428,23 @@ regl.frame(function(context) {
   if (!ctx || context.tick < 4) return;
   let rgb = particles.colors;
   for (let part = 0; part < config.numParticles; part++) {
-    let i = part*4;
-    let [ox, oy] = [particles.positions[i+2], particles.positions[i+3]];
-    ctx.beginPath();
-    ctx.moveTo(ox * screenCanvas.width, oy * screenCanvas.height);
-    for (let seg = 0; seg+1 < config.numSegments; seg++) {
-      let ni = (seg+1)*config.numParticles*4 + part*4;
-      let [px, py] = [particles.positions[ni+2], particles.positions[ni+3]];
-      // if (part < 3) {
-      //   console.log(`particle ${part} = ${ox},${oy} to ${px},${py}`);
-      // }
-      ctx.strokeStyle = `rgba(${rgb[ni]}, ${rgb[ni+1]}, ${rgb[ni+2]}, 100%)`;
+    for (let seg = 0; seg < config.numSegments; seg++) {
+      let i = seg*config.numParticles*4 + part*4;
+      let [ox, oy] = [particles.positions[i], particles.positions[i+1]];
+      let [px, py] = [particles.positions[i+2], particles.positions[i+3]];
+      if (particles.positions[i] < 0.) {
+        continue;
+      }
+      ctx.beginPath();
+      ctx.moveTo(ox * screenCanvas.width, oy * screenCanvas.height);
       ctx.lineTo(px * screenCanvas.width, py * screenCanvas.height);
+      ctx.strokeStyle = `rgba(${rgb[i]}, ${rgb[i+1]}, ${rgb[i+2]}, 100%)`;
       ctx.stroke();
+      ox = px; oy = py;
     }
   }
   let t4 = performance.now();
 
-  console.log(t2 - t1, t3 - t2, t4 - t3);
+  console.log(`frame=${deltaTime.toFixed(2)}`, (t2 - t1).toFixed(2), (t3 - t2).toFixed(2), (t4 - t3).toFixed(2));
 });
 
