@@ -1,3 +1,5 @@
+// TODO: keep a rotating history of 10 positions; canvas lineTo can connect the last 10
+
 import * as Regl from "regl"
 import * as Webgl2 from "./regl-webgl2-compat.js"
 import { imageGenerator } from "./image-shader"
@@ -13,7 +15,8 @@ const regl = Webgl2.overrideContextType(
 type Point = [number, number];
 
 var config:any = {
-  numParticles: 9000,
+  numParticles: 10000,
+  numSegments: 10,
   clear: () => clearScreen(),
 };
 window.onload = function() {
@@ -26,7 +29,7 @@ window.onload = function() {
   }
   addConfig('image', 'starry').options(['starry', 'face', 'forest', 'landscape', 'tree', 'try drag and drop']).onFinishChange((v) => loadImage(v));
   addConfig('lineWidth', 0.5, 0.2, 20.0).step(.01);
-  addConfig('lineLength', 0.1, 0.02, 1.0).step(.01);
+  addConfig('lineLength', 0.1, 0.02, 10.0).step(.01);
   addConfig('lineSpeed', 1., 0.1, 2.0).step(.1);
   addConfig('variance', 1., 0.1, 3.).step(.1);
   addConfig('jaggies', 3., 0., 5.).step(1);
@@ -60,21 +63,22 @@ function initFramebuffers() {
 
   loadImage(config.image);
 
-  // Holds the particle positions. particles[i, 0].xyzw = {lastPosX, lastPosY, posX, posY}
-  particles.positions = new Float32Array(config.numParticles * 4);
-  particles.colors = new Float32Array(config.numParticles * 4);
+  // Holds the particle position. particles[i, 0].xyzw = {lastPosX, lastPosY, posX, posY}
+  particles.positions = new Float32Array(config.numParticles * 4 * config.numSegments);
+  // Holds the particle color and birth time. particles[i, 0].colors = {r, g, b, birth}
+  particles.colors = new Float32Array(config.numParticles * 4 * config.numSegments);
   particles.fbo = createDoubleFBO(2, {
     type: 'float32',
     format: 'rgba',
     wrap: 'clamp',
     width: config.numParticles,
-    height: 1,
+    height: config.numSegments,
   });
 
   particles.fbo.src.color[0].subimage({ // position
     width: config.numParticles,
-    height: 1,
-    data: Array.from({length: config.numParticles}, (_, i) => [-1,0,-1,0]),
+    height: config.numSegments,
+    data: Array.from({length: config.numParticles*config.numSegments}, (_, i) => [-1,-1,-1,-1]),
   });
 }
 
@@ -292,6 +296,8 @@ const updateParticles = baseVertShader({
   uniform sampler2D particlePositions;
   uniform sampler2D particleColors;
   uniform sampler2D sourceImage;
+  uniform int readIdx;
+  uniform int writeIdx;
   uniform float maxAge;
   uniform float maxSpeed;
   uniform float clockTime;
@@ -311,11 +317,22 @@ const updateParticles = baseVertShader({
     }
   }
   void main() {
-    vec2 pos = texelFetch(particlePositions, ivec2(gl_FragCoord.xy), 0).zw;
-    vec2 velocity = velocityAtPoint(pos, iTime, options);
+    ivec2 ij = ivec2(gl_FragCoord.xy);
+    if (ij.y != writeIdx) {
+      // We are not writing to this index on this pass: keep data intact.
+      fragData0 = texelFetch(particlePositions, ij, 0);
+      fragData1 = texelFetch(particleColors, ij, 0);
+      return;
+    }
 
+    ivec2 ijRead = ivec2(gl_FragCoord.x, readIdx);
+
+    vec2 pos = texelFetch(particlePositions, ijRead, 0).zw;
+    vec2 velocity = velocityAtPoint(pos, iTime, options);
     vec2 newPos = pos + velocity * .003 * maxSpeed;
-    vec4 colors = texelFetch(particleColors, ivec2(gl_FragCoord.xy), 0);
+
+    vec4 colors = texelFetch(particleColors, ijRead, 0);
+
     maybeReset(pos, newPos, colors.rgb, colors.a);
     fragData0 = vec4(pos, newPos);
     fragData1 = colors;
@@ -325,6 +342,9 @@ const updateParticles = baseVertShader({
     particlePositions: () => particles.fbo.src.color[0],
     particleColors: () => particles.fbo.src.color[1],
     sourceImage: () => sourceImageGenerator.getTex(),
+    readIdx: regl.prop('readIdx'),
+    writeIdx: regl.prop('writeIdx'),
+    // TODO: move to options
     maxAge: () => Math.max(.02, config.lineLength / config.lineSpeed),
     maxSpeed: () => config.lineSpeed,
     clockTime: regl.context('time'),
@@ -389,33 +409,41 @@ regl.frame(function(context) {
 
   let t1 = performance.now();
 
-  updateParticles();
-  particles.fbo.swap();
-
+  for (let i = 0; i < config.numSegments; i++) {
+    updateParticles({readIdx: i, writeIdx: (i+1) % config.numSegments});
+    particles.fbo.swap();
+  }
   let t2 = performance.now();
 
   webgl.readBuffer(webgl.COLOR_ATTACHMENT0);
-  regl.read({data: particles.positions, framebuffer: particles.fbo.dst});
+  regl.read({data: particles.positions, framebuffer: particles.fbo.src});
   webgl.readBuffer(webgl.COLOR_ATTACHMENT1);
-  regl.read({data: particles.colors, framebuffer: particles.fbo.dst});
+  regl.read({data: particles.colors, framebuffer: particles.fbo.src});
 
   let t3 = performance.now();
 
   let ctx = screenCanvas.getContext('2d');
   if (!ctx || context.tick < 4) return;
-  for (let i = 0; i < particles.positions.length; i += 4) {
-    let [ox, oy] = [particles.positions[i], particles.positions[i+1]];
-    let [px, py] = [particles.positions[i+2], particles.positions[i+3]];
-    let rgb = particles.colors;
-    ctx.strokeStyle = `rgba(${rgb[i]}, ${rgb[i+1]}, ${rgb[i+2]}, 100%)`;
-    ctx.beginPath();
-    ctx.moveTo(ox * screenCanvas.width, oy * screenCanvas.height);
-    ctx.lineTo(px * screenCanvas.width, py * screenCanvas.height);
-    ctx.lineWidth = config.lineWidth;
-    ctx.stroke();
+  for (let part = 0; part < config.numParticles; part++) {
+    for (let seg = 0; seg+1 < config.numSegments; seg++) {
+      let i = seg*config.numParticles*4 + part*4;
+      let ni = (seg+1)*config.numParticles*4 + part*4;
+      let [ox, oy] = [particles.positions[i+2], particles.positions[i+3]];
+      let [px, py] = [particles.positions[ni+2], particles.positions[ni+3]];
+      // if (part < 3) {
+      //   console.log(`particle ${part} = ${ox},${oy} to ${px},${py}`);
+      // }
+      let rgb = particles.colors;
+      ctx.strokeStyle = `rgba(${rgb[i]}, ${rgb[i+1]}, ${rgb[i+2]}, 100%)`;
+      ctx.beginPath();
+      ctx.moveTo(ox * screenCanvas.width, oy * screenCanvas.height);
+      ctx.lineTo(px * screenCanvas.width, py * screenCanvas.height);
+      ctx.lineWidth = config.lineWidth;
+      ctx.stroke();
+    }
   }
   let t4 = performance.now();
 
-  // console.log(t2 - t1, t3 - t2, t4 - t3);
+  console.log(t2 - t1, t3 - t2, t4 - t3);
 });
 
