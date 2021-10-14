@@ -463,15 +463,14 @@ regl.frame(function(context) {
     let i = writeIdx*config.numParticles*4 + part*4;
     let [ox, oy] = [particles.positions[i], particles.positions[i+1]];
     let [px, py] = [particles.positions[i+2], particles.positions[i+3]];
-    if (particles.positions[i] < 0.) {
+    if (ox < 0.)
       continue;
-    }
     ctx.beginPath();
     ctx.moveTo(ox * screenCanvas.width, oy * screenCanvas.height);
     ctx.lineTo(px * screenCanvas.width, py * screenCanvas.height);
-    ctx.strokeStyle = `rgba(${rgb[i]}, ${rgb[i+1]}, ${rgb[i+2]}, 100%)`;
+    const toHex = (n) => (n < 16 ? '0' : '') + n.toString(16);
+    ctx.strokeStyle = `#${toHex(rgb[i])}${toHex(rgb[i+1])}${toHex(rgb[i+2])}`;
     ctx.stroke();
-    ox = px; oy = py;
   }
 
   let t3 = performance.now();
