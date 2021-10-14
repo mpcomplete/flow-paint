@@ -340,9 +340,9 @@ const updateParticles = baseVertShader({
     return texture(sourceImage, uvScaled);
   }
   void maybeReset(inout vec2 pos, inout vec2 newPos, inout vec3 color, inout float birth) {
-    float death = maxAge*(1. + hash3(vec3(gl_FragCoord.xy+17., clockTime)).x);
+    float death = maxAge*(1. + hash3(vec3(gl_FragCoord.yx*.0013, clockTime)).x);
     if ((clockTime - birth) > death || newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.) {
-      newPos = randomPoint(vec2(gl_FragCoord.xy), clockTime);
+      newPos = randomPoint(vec2(gl_FragCoord.xy*.001), clockTime);
       pos = vec2(-1., -1.);
       color = sampleTexture(newPos).rgb*255.;
       birth = clockTime;
