@@ -457,7 +457,6 @@ regl.frame(function(context) {
 
   let ctx = screenCanvas.getContext('2d');
   ctx.lineWidth = config.lineWidth;
-  if (!ctx || context.tick < 4) return;
   let rgb = particles.colors;
   for (let part = 0; part < config.numParticles; part++) {
     let i = writeIdx*config.numParticles*4 + part*4;
@@ -476,6 +475,6 @@ regl.frame(function(context) {
   let t3 = performance.now();
 
   currentTick++;
-  console.log(`frame=${deltaTime.toFixed(2)}`, (t2 - t1).toFixed(2), (t3 - t2).toFixed(2));
+  console.log(`frame=${(deltaTime*1000).toFixed(2)}`, (t2 - t1).toFixed(2), (t3 - t2).toFixed(2));
 });
 
