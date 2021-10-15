@@ -81,11 +81,13 @@ function makeShader(regl, fragCode, fragLib) {
 }
 
 export function makeColorSource(regl, size: Point, opts:{
-  type: 'image' | 'vangogh',
+  type: 'image' | 'firerings' | 'colorspill',
   imageUrl?: string,
   parameter?: number, // TODO iMouse
   fragLib?: string,
 }) {
+  let statusDiv = document.querySelector('#status')!;
+
   const shader = makeShader(regl, shaders[opts.type], opts.fragLib);
   const fbo = regl.framebuffer({
     color: regl.texture({
@@ -98,19 +100,18 @@ export function makeColorSource(regl, size: Point, opts:{
     depthStencil: false,
   });
 
+  let animated = opts.type != 'image';
+  let readyToDraw = opts.type != 'image';
   let texture;
-  let waitImage = false;
-  let statusDiv = document.querySelector('#status')!;
   if (opts.imageUrl) {
     var image = new Image();
     image.crossOrigin = 'anonymous';
     image.src = opts.imageUrl;
     texture = regl.texture();
-    waitImage = true;
     statusDiv.innerHTML = 'Loading...';
     image.onload = function() {
       texture = regl.texture(image);
-      waitImage = false;
+      readyToDraw = true;
       statusDiv.innerHTML = '';
     }
     image.onerror = function() {
@@ -118,17 +119,16 @@ export function makeColorSource(regl, size: Point, opts:{
     }
   }
 
-  let ready = false;
+  let drawFinished = false;
   return {
-    draw: () => shader({texture: texture, parameter: opts.parameter}),
     ensureData: function() {
-      if (!waitImage) {
+      if (readyToDraw && (animated || !drawFinished)) {
         regl({framebuffer: fbo})(() => {
           shader({texture: texture, parameter: opts.parameter, framebuffer: fbo});
-          ready = true;
+          drawFinished = true;
         });
       }
-      return ready;
+      return drawFinished;
     },
     getTexture: () => fbo.color[0],
   };

@@ -1,5 +1,3 @@
-// TODO: fix image/shader choices
-
 import * as Regl from "regl"
 import * as dat from "dat.gui"
 import * as Webgl2 from "./regl-webgl2-compat.js"
@@ -95,7 +93,6 @@ function initFramebuffers() {
 const loadImageAsset = (name) => initColorSource({type: 'image', imageUrl: `images/${name}.jpg`});
 const loadShader = (name) => initColorSource({type: name, fragLib: fragLib});
 function initColorSource(opts) {
-  console.log("Loading color source:", opts, config.image, config.animated);
   colorSource = makeColorSource(regl, [screenCanvas.width/4, screenCanvas.height/4], opts);
   clearScreen();
 }
@@ -117,8 +114,6 @@ function createFBO(count, props) {
   return regl.framebuffer({
     color: Array.from({length: count}, () => regl.texture(props)),
     depthStencil: false,
-    depth: false,
-    stencil: false,
   });
 }
 
@@ -254,42 +249,45 @@ vec2 voronoi(vec2 p, float t) {
   return rotate(normalize(v), PI/2.);
 }`;
 
-const commonFrag = `#version 300 es
-precision highp float;
-precision highp sampler2D;
+const baseFlowShader = (opts) => regl(Object.assign(opts, {
+  frag: `#version 300 es
+  precision highp float;
+  precision highp sampler2D;
+  ${fragLib}
 
-struct FieldOptions {
-  bool useVoronoi;
-  bool useFBM;
-  bool useSimplex;
-  float jaggies;
-  float variance;
-};
-${fragLib}
-vec2 velocityAtPoint(vec2 p, float t, FieldOptions fieldOptions) {
-  t = snoise(vec3(t*.03, 0, 0));
-  p *= fieldOptions.variance;
-  vec2 v = vec2(1., 0.);
-  if (fieldOptions.useVoronoi) {
-    v = voronoi(p*7., t);
-  } else if (fieldOptions.useFBM) {
-    v = fbm2(vec3(p*2., t)) - .5;
-  } else if (fieldOptions.useSimplex) {
-    v = snoise2(vec3(p*5., t)) - .5;
-  } else {
-    float th = (t - .5)*.4;
-    vec2 pr = p * TAU/4.;
-    v.x = sin(TAU * sin(pr.x*1.7) * sin(pr.y*3.1) + (pr.x-.1 + th)*(pr.y+.2)*TAU);
-    pr.y += sin(pr.x);
-    v.y = sin(1.3 + TAU * sin(pr.x*4.5) * sin(pr.y*1.3) + (pr.x+.1)*(pr.y-.4 + th)*TAU*.7);
-  }
-  float a = 0.;
-  if (fieldOptions.jaggies > 0.)
-    a = snoise(vec3(p*fieldOptions.jaggies*11., t*3.)) - .5;
-  return rotate(normalize(v), a * TAU/4.);
-}`;
+  struct FieldOptions {
+    bool useVoronoi;
+    bool useFBM;
+    bool useSimplex;
+    float jaggies;
+    float variance;
+  };
+  uniform float iTime;
+  uniform FieldOptions fieldOptions;
 
-const baseVertShader = (opts) => regl(Object.assign({
+  vec2 velocityAtPoint(vec2 p, float t) {
+    t = snoise(vec3(t*.03, 0, 0));
+    p *= fieldOptions.variance;
+    vec2 v = vec2(1., 0.);
+    if (fieldOptions.useVoronoi) {
+      v = voronoi(p*7., t);
+    } else if (fieldOptions.useFBM) {
+      v = fbm2(vec3(p*2., t)) - .5;
+    } else if (fieldOptions.useSimplex) {
+      v = snoise2(vec3(p*5., t)) - .5;
+    } else {
+      float th = (t - .5)*.4;
+      vec2 pr = p * TAU/4.;
+      v.x = sin(TAU * sin(pr.x*1.7) * sin(pr.y*3.1) + (pr.x-.1 + th)*(pr.y+.2)*TAU);
+      pr.y += sin(pr.x);
+      v.y = sin(1.3 + TAU * sin(pr.x*4.5) * sin(pr.y*1.3) + (pr.x+.1)*(pr.y-.4 + th)*TAU*.7);
+    }
+    float a = 0.;
+    if (fieldOptions.jaggies > 0.)
+      a = snoise(vec3(p*fieldOptions.jaggies*11., t*3.)) - .5;
+    return rotate(normalize(v), a * TAU/4.);
+  }` + opts.frag,
+
   vert: `#version 300 es
   precision highp float;
   in vec2 position;
@@ -304,13 +302,19 @@ const baseVertShader = (opts) => regl(Object.assign({
   attributes: {
     position: [[-1, -1], [-1, 1], [1, 1], [-1, -1], [1, 1], [1, -1]]
   },
+  uniforms: Object.assign(opts.uniforms||{}, {
+    iTime: () => animateTime,
+    'fieldOptions.useVoronoi': () => config.flowType == 'voronoi',
+    'fieldOptions.useFBM': () => config.flowType == 'fractal',
+    'fieldOptions.useSimplex': () => config.flowType == 'simplex',
+    'fieldOptions.jaggies': () => config.jaggies,
+    'fieldOptions.variance': () => config.variance,
+  }),
   count: 6,
-  framebuffer: regl.prop('framebuffer'),
-}, opts));
+}));
 
-const updateParticles = baseVertShader({
-  frag: commonFrag + `
-  in vec2 uv;
+const updateParticles = baseFlowShader({
+  frag: `
   layout(location = 0) out vec4 fragData0; // lastPos, pos
   layout(location = 1) out vec4 fragData1; // colors.xyz, birth
   uniform sampler2D particlePositions;
@@ -319,11 +323,9 @@ const updateParticles = baseVertShader({
   uniform int readIdx;
   uniform int writeIdx;
   uniform float clockTime;
-  uniform float iTime;
   uniform vec2 iResolution;
   uniform float lineLifetime;
   uniform float lineSpeed;
-  uniform FieldOptions fieldOptions;
 
   vec2 randomPoint(vec2 uv, float t) {
     return hash3(vec3(uv, t)).xy;
@@ -349,7 +351,7 @@ const updateParticles = baseVertShader({
     ivec2 ijRead = ivec2(gl_FragCoord.x, readIdx);
 
     vec2 pos = texelFetch(particlePositions, ijRead, 0).zw;
-    vec2 velocity = velocityAtPoint(pos, iTime, fieldOptions);
+    vec2 velocity = velocityAtPoint(pos, iTime);
     vec2 newPos = pos + velocity * .001 * lineSpeed;
 
     vec4 colors = texelFetch(particleColors, ijRead, 0);
@@ -366,24 +368,16 @@ const updateParticles = baseVertShader({
     readIdx: regl.prop('readIdx'),
     writeIdx: regl.prop('writeIdx'),
     clockTime: () => currentTick,
-    iTime: () => animateTime,
     iResolution: () => [screenCanvas.width, screenCanvas.height],
     lineLifetime: () => Math.max(1, config.lineLength / config.lineSpeed),
     lineSpeed: () => config.lineSpeed,
-    'fieldOptions.useVoronoi': () => config.flowType == 'voronoi',
-    'fieldOptions.useFBM': () => config.flowType == 'fractal',
-    'fieldOptions.useSimplex': () => config.flowType == 'simplex',
-    'fieldOptions.jaggies': () => config.jaggies,
-    'fieldOptions.variance': () => config.variance,
   },
 });
 
-const drawFlowField = baseVertShader({
-  frag: commonFrag + `
+const drawFlowField = baseFlowShader({
+  frag: `
   in vec2 uv;
-  uniform float iTime;
   out vec4 fragColor;
-  uniform FieldOptions fieldOptions;
 
   // Íñigo Quílez
   float udSegment( in vec2 p, in vec2 a, in vec2 b ) {
@@ -394,18 +388,11 @@ const drawFlowField = baseVertShader({
   }
   void main() {
     vec2 center = vec2(0.);
-    vec2 velocity = velocityAtPoint(uv, iTime, fieldOptions);
+    vec2 velocity = velocityAtPoint(uv, iTime);
     float c = udSegment(fract(uv*64.) - .5, center, velocity);
     fragColor.rgb = vec3(1. - sign(c));
   }`,
-  uniforms: {
-    iTime: () => animateTime,
-    'fieldOptions.useVoronoi': () => config.flowType == 'voronoi',
-    'fieldOptions.useFBM': () => config.flowType == 'fractal',
-    'fieldOptions.useSimplex': () => config.flowType == 'simplex',
-    'fieldOptions.jaggies': () => config.jaggies,
-    'fieldOptions.variance': () => config.variance,
-  },
+  framebuffer: regl.prop('framebuffer'),
 });
 
 let lastTime = 0;
