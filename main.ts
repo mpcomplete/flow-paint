@@ -9,7 +9,7 @@ import * as guiPresets from "./gui-presets.json"
 const regl = Webgl2.overrideContextType(() => Regl({canvas: "#regl-canvas", extensions: ['WEBGL_draw_buffers', 'OES_texture_float', 'OES_texture_float_linear', 'OES_texture_half_float', 'ANGLE_instanced_arrays']}));
 
 var config:any = {
-  numParticles: 10000,
+  numParticles: 12000, // See initFramebuffers
   // This is an optimization: Keep a history of 30 frames (line segments) so we only have to read the particle pixel buffer (which is slow) once per 30 frames.
   numSegments: 30,
   clear: () => clearScreen(),
@@ -55,17 +55,26 @@ function initFramebuffers() {
   reglCanvas.width = screenCanvas.width = window.innerWidth;
   reglCanvas.height = screenCanvas.height = window.innerHeight;
 
-  // Holds the particle position. particles[i, 0].xyzw = {lastPosX, lastPosY, posX, posY}
-  particles.positions = new Float32Array(config.numParticles * 4 * config.numSegments);
-  // Holds the particle color and birth time. particles[i, 0].colors = {r, g, b, birth}
-  particles.colors = new Float32Array(config.numParticles * 4 * config.numSegments);
-  particles.fbo = createDoubleFBO(2, {
-    type: 'float32',
-    format: 'rgba',
-    wrap: 'clamp',
-    width: config.numParticles,
-    height: config.numSegments,
-  });
+  let sizes = [12000, 8000, 6000, 3000, 1000, 100];
+  for (let i = 0; i < sizes.length; i++) {
+    try {
+      config.numParticles = sizes[i];
+      // Holds the particle position. particles[i, 0].xyzw = {lastPosX, lastPosY, posX, posY}
+      particles.positions = new Float32Array(config.numParticles * 4 * config.numSegments);
+      // Holds the particle color and birth time. particles[i, 0].colors = {r, g, b, birth}
+      particles.colors = new Float32Array(config.numParticles * 4 * config.numSegments);
+      particles.fbo = createDoubleFBO(2, {
+        type: 'float32',
+        format: 'rgba',
+        wrap: 'clamp',
+        width: config.numParticles,
+        height: config.numSegments,
+      });
+      break;
+    } catch (e) {
+      particles.fbo?.destroy();
+    }
+  }
 
   loadImageAsset(config.image);
 }
