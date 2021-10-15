@@ -26,8 +26,8 @@ window.onload = function() {
     return gui.add(config, name, min, max).name(readableName(name));
   }
   gui = topgui.addFolder('Color source');
-  addConfig('image', 'starry').options(imageAssets.concat(['try drag and drop'])).onFinishChange((v) => loadImageAsset(v));
-  addConfig('animated', 'colorspill').options(['colorspill', 'firerings']).onFinishChange((v) => loadShader(v));
+  addConfig('image', 'starry').options(imageAssets.concat(['try drag and drop'])).listen().onFinishChange((v) => {if (v) {loadImageAsset(v); config.animated = '';}});
+  addConfig('animated', 'colorspill').options(['colorspill', 'firerings']).listen().onFinishChange((v) => {if (v) {loadShader(v); config.image = '';}});
   gui = topgui.addFolder('Brush options');
   addConfig('lineWidth', 0.5, 0.2, 20.0).step(.01);
   addConfig('lineLength', 4, 1, 50.0).step(1);
@@ -85,13 +85,17 @@ function initFramebuffers() {
     }
   }
 
-  loadImageAsset(config.image);
+  if (config.image) {
+    loadImageAsset(config.image);
+  } else if (config.animated) {
+    loadShader(config.animated);
+  }
 }
 
 const loadImageAsset = (name) => initColorSource({type: 'image', imageUrl: `images/${name}.jpg`});
 const loadShader = (name) => initColorSource({type: name, fragLib: fragLib});
 function initColorSource(opts) {
-  console.log("Loading color source:", opts);
+  console.log("Loading color source:", opts, config.image, config.animated);
   colorSource = makeColorSource(regl, [screenCanvas.width/4, screenCanvas.height/4], opts);
   clearScreen();
 }

@@ -1,5 +1,5 @@
 {
-  "preset": "Default",
+  "preset": "Fire Rings",
   "closed": false,
   "remembered": {
     "Default": {
@@ -13,7 +13,7 @@
         "flowType": "voronoi",
         "varyFlowField": true,
         "showFlowField": false,
-        "fps": 28.203970214692145
+        "fps": 37.61801931668846
       }
     },
     "Oil Painting": {
@@ -32,15 +32,16 @@
     "Fuzzy Face": {
       "0": {
         "image": "face",
+        "animated": "",
         "lineWidth": 0.3,
-        "lineLength": 39,
+        "lineLength": 8,
         "lineSpeed": 10,
-        "variance": 1,
+        "variance": 1.5,
         "jaggies": 3,
-        "flowType": "sinusoid",
+        "flowType": "fractal",
         "varyFlowField": true,
         "showFlowField": false,
-        "fps": 36.66345827427669
+        "fps": 57.867778716192404
       }
     },
     "Windy Tree": {
@@ -59,15 +60,16 @@
     "Starry Eve": {
       "0": {
         "image": "starry",
-        "lineWidth": 0.3,
-        "lineLength": 35,
-        "lineSpeed": 8,
+        "animated": "",
+        "lineWidth": 1,
+        "lineLength": 8,
+        "lineSpeed": 2.6,
         "variance": 1,
         "jaggies": 3,
-        "flowType": "voronoi",
+        "flowType": "sinusoid",
         "varyFlowField": true,
         "showFlowField": false,
-        "fps": 59.94815300700085
+        "fps": 38.9223338477964
       }
     },
     "Fiery Sunset": {
@@ -85,21 +87,23 @@
     },
     "Fire Rings": {
       "0": {
-        "image": "firerings",
+        "image": "",
+        "animated": "firerings",
         "lineWidth": 0.3,
         "lineLength": 35,
         "lineSpeed": 8,
-        "variance": 1,
+        "variance": 0.5,
         "jaggies": 3,
         "flowType": "voronoi",
         "varyFlowField": true,
         "showFlowField": false,
-        "fps": 39.173686807355764
+        "fps": 38.80049004419134
       }
     },
     "Color Spill": {
       "0": {
-        "image": "colorspill",
+        "image": "",
+        "animated": "colorspill",
         "lineWidth": 0.5,
         "lineLength": 35,
         "lineSpeed": 5,
@@ -108,7 +112,7 @@
         "flowType": "fractal",
         "varyFlowField": true,
         "showFlowField": false,
-        "fps": 35.03465651203295
+        "fps": 33.50457986549519
       }
     }
   },
@@ -118,7 +122,7 @@
       "closed": false,
       "folders": {}
     },
-    "Line": {
+    "Brush options": {
       "preset": "Default",
       "closed": false,
       "folders": {}
@@ -130,7 +134,7 @@
     },
     "Debug": {
       "preset": "Default",
-      "closed": true,
+      "closed": false,
       "folders": {}
     }
   }
