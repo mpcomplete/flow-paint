@@ -6,7 +6,7 @@ import * as dragdrop from "./dragdrop"
 import * as dat from "dat.gui"
 import * as guiPresets from "./gui-presets.json"
 
-const regl = Webgl2.overrideContextType(() => Regl({canvas: "#regl-canvas", extensions: ['WEBGL_draw_buffers', 'OES_texture_float', 'OES_texture_float_linear', 'OES_texture_half_float', 'ANGLE_instanced_arrays']}));
+const regl = Webgl2.overrideContextType(() => Regl({canvas: "#regl-canvas", extensions: ['WEBGL_draw_buffers', 'OES_texture_float']}));
 
 var config:any = {
   numParticles: 12000, // See initFramebuffers
