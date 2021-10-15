@@ -26,8 +26,9 @@ window.onload = function() {
     return gui.add(config, name, min, max).name(readableName(name));
   }
   gui = topgui.addFolder('Color source');
-  addConfig('image', 'starry').options(imageAssets.concat(['colorspill', 'firerings', 'try drag and drop'])).onFinishChange((v) => loadImageAsset(v));
-  gui = topgui.addFolder('Line');
+  addConfig('image', 'starry').options(imageAssets.concat(['try drag and drop'])).onFinishChange((v) => loadImageAsset(v));
+  addConfig('animated', 'colorspill').options(['colorspill', 'firerings']).onFinishChange((v) => loadShader(v));
+  gui = topgui.addFolder('Brush options');
   addConfig('lineWidth', 0.5, 0.2, 20.0).step(.01);
   addConfig('lineLength', 4, 1, 50.0).step(1);
   addConfig('lineSpeed', 2., 1., 10.0).step(.1);
@@ -44,7 +45,7 @@ window.onload = function() {
   initFramebuffers();
 
   dragdrop.init();
-  dragdrop.handlers.ondrop = (url) => initImageLoader(url);
+  dragdrop.handlers.ondrop = (url) => initColorSource({type: 'image', imageUrl: url});
 };
 
 let particles: any = {
@@ -87,9 +88,11 @@ function initFramebuffers() {
   loadImageAsset(config.image);
 }
 
-const loadImageAsset = (name) => { if (imageAssets.includes(name)) initImageLoader(`images/${name}.jpg`); };
-function initImageLoader(imageUrl) {
-  colorSource = makeColorSource(regl, [screenCanvas.width/4, screenCanvas.height/4], {type: 'image', imageUrl: imageUrl});
+const loadImageAsset = (name) => initColorSource({type: 'image', imageUrl: `images/${name}.jpg`});
+const loadShader = (name) => initColorSource({type: name, fragLib: fragLib});
+function initColorSource(opts) {
+  console.log("Loading color source:", opts);
+  colorSource = makeColorSource(regl, [screenCanvas.width/4, screenCanvas.height/4], opts);
   clearScreen();
 }
 
@@ -125,18 +128,7 @@ function createDoubleFBO(count, props) {
   }
 }
 
-const commonFrag = `#version 300 es
-precision highp float;
-precision highp sampler2D;
-
-struct FieldOptions {
-  bool useVoronoi;
-  bool useFBM;
-  bool useSimplex;
-  float jaggies;
-  float variance;
-};
-
+const fragLib = `
 const float PI = 3.14159269369;
 const float TAU = 6.28318530718;
 
@@ -237,7 +229,7 @@ vec2 fbm2(vec3 p) {
 }
 
 // Voronoi noise
-vec2 voronoi(vec2 p, float t, FieldOptions fieldOptions) {
+vec2 voronoi(vec2 p, float t) {
   vec2 i = floor(p);
   vec2 f = fract(p);
 
@@ -256,14 +248,26 @@ vec2 voronoi(vec2 p, float t, FieldOptions fieldOptions) {
     }
   }
   return rotate(normalize(v), PI/2.);
-}
+}`;
 
+const commonFrag = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+
+struct FieldOptions {
+  bool useVoronoi;
+  bool useFBM;
+  bool useSimplex;
+  float jaggies;
+  float variance;
+};
+${fragLib}
 vec2 velocityAtPoint(vec2 p, float t, FieldOptions fieldOptions) {
   t = snoise(vec3(t*.03, 0, 0));
   p *= fieldOptions.variance;
   vec2 v = vec2(1., 0.);
   if (fieldOptions.useVoronoi) {
-    v = voronoi(p*7., t, fieldOptions);
+    v = voronoi(p*7., t);
   } else if (fieldOptions.useFBM) {
     v = fbm2(vec3(p*2., t)) - .5;
   } else if (fieldOptions.useSimplex) {
@@ -305,7 +309,6 @@ const updateParticles = baseVertShader({
   in vec2 uv;
   layout(location = 0) out vec4 fragData0; // lastPos, pos
   layout(location = 1) out vec4 fragData1; // colors.xyz, birth
-  // out vec4 fragColor;
   uniform sampler2D particlePositions;
   uniform sampler2D particleColors;
   uniform sampler2D sourceImage;
@@ -316,57 +319,17 @@ const updateParticles = baseVertShader({
   uniform vec2 iResolution;
   uniform float lineLifetime;
   uniform float lineSpeed;
-  uniform int colorAlgorithm;
   uniform FieldOptions fieldOptions;
 
   vec2 randomPoint(vec2 uv, float t) {
     return hash3(vec3(uv, t)).xy;
-  }
-  vec3 sampleTexture(in vec2 uv) {
-    vec2 tsize = vec2(textureSize(sourceImage, 0));
-    vec2 scale = vec2(iResolution.x/tsize.x, iResolution.y/tsize.y);
-    vec2 uvScaled = uv;
-    if (scale.x > scale.y) {
-      // We scaled in y (the smaller dim). Center uv, scale it, and un-center it.
-      uvScaled.x -= .5;
-      uvScaled.x *= scale.x/scale.y;
-      uvScaled.x += .5;
-    } else {
-      uvScaled.y -= .5;
-      uvScaled.y *= scale.y/scale.x;
-      uvScaled.y += .5;
-    }
-    return texture(sourceImage, uvScaled).rgb;
-  }
-  vec3 colorspill(vec2 uv, float t) {
-    vec3 p = vec3(uv, t);
-    p.xy = rotate(uv, fbm(p)*TAU);
-    p.z *= 7.;
-    return vec3(fbm(p+vec3(1.8)), fbm(p+vec3(11.5)), fbm(p+vec3(27.5)));
-  }
-  vec3 firerings(vec2 uv, float t) {
-    vec3 p = vec3(uv, t);
-    p.xy = rotate((p.xy+1.)*.7, snoise(p)*TAU);
-    float f = snoise(p)+.5;
-    vec3 fv = (f + vec3(.25 + .15*sin(t*9.), .3, .25));
-    vec3 c = pow(.5 + .5 * sin(2. * fv), vec3(8.0));
-    return c;
-  }
-  vec3 getColor(in vec2 uv) {
-    if (colorAlgorithm == 0) {
-      return texture(sourceImage, uv).rgb;
-    } else if (colorAlgorithm == 1) {
-      return colorspill(uv, 1.+iTime*.02);
-    } else if (colorAlgorithm == 2) {
-      return firerings(uv, iTime*.01);
-    }
   }
   void maybeReset(inout vec2 pos, inout vec2 newPos, inout vec3 color, inout float birth) {
     float death = lineLifetime*(1. + hash3(vec3(gl_FragCoord.yx*.0013, clockTime)).x);
     if ((clockTime - birth) > death || newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.) {
       newPos = randomPoint(vec2(gl_FragCoord.xy*.001), clockTime);
       pos = vec2(-1., -1.);
-      color = getColor(newPos)*255.;
+      color = texture(sourceImage, newPos).rgb*255.;
       birth = clockTime;
     }
   }
@@ -401,7 +364,6 @@ const updateParticles = baseVertShader({
     clockTime: () => currentTick,
     iTime: () => animateTime,
     iResolution: () => [screenCanvas.width, screenCanvas.height],
-    colorAlgorithm: () => (config.image == 'colorspill' ? 1 : config.image == 'firerings' ? 2 : 0),
     lineLifetime: () => Math.max(1, config.lineLength / config.lineSpeed),
     lineSpeed: () => config.lineSpeed,
     'fieldOptions.useVoronoi': () => config.flowType == 'voronoi',
@@ -506,5 +468,5 @@ regl.frame(function(context) {
   let t3 = performance.now();
 
   currentTick++;
-  console.log(`frame=${(deltaTime*1000).toFixed(2)}`, (t1 - t0).toFixed(2), (t2 - t1).toFixed(2), (t3 - t2).toFixed(2));
+  // console.log(`frame=${(deltaTime*1000).toFixed(2)}`, (t1 - t0).toFixed(2), (t2 - t1).toFixed(2), (t3 - t2).toFixed(2));
 });

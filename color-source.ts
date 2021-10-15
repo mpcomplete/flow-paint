@@ -1,8 +1,30 @@
 type Point = [number, number];
 
 let shaders = [];
-shaders['vangogh'] = `
-`;
+
+shaders['firerings'] = `
+vec3 firerings(vec2 uv, float t) {
+  vec3 p = vec3(uv, t);
+  p.xy = rotate((p.xy+1.)*.7, snoise(p)*TAU);
+  float f = snoise(p)+.5;
+  vec3 fv = (f + vec3(.25 + .15*sin(t*9.), .3, .25));
+  vec3 c = pow(.5 + .5 * sin(2. * fv), vec3(8.0));
+  return c;
+}
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+  fragColor = vec4(firerings(uv, iTime*.01), 1.);
+}`;
+
+shaders['colorspill'] = `
+vec3 colorspill(vec2 uv, float t) {
+  vec3 p = vec3(uv, t);
+  p.xy = rotate(uv, fbm(p)*TAU);
+  p.z *= 7.;
+  return vec3(fbm(p+vec3(1.8)), fbm(p+vec3(11.5)), fbm(p+vec3(27.5)));
+}
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+  fragColor = vec4(colorspill(uv, iTime*.02), 1.);
+}`;
 
 shaders['image'] = `
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
@@ -22,7 +44,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   fragColor = texture(iChannel0, uvScaled);
 }`;
 
-function makeShader(regl, fragCode) {
+function makeShader(regl, fragCode, fragLib) {
   return regl({
     vert: `#version 300 es
     precision highp float;
@@ -43,7 +65,7 @@ function makeShader(regl, fragCode) {
     void mainImage(out vec4 fragColor, in vec2 fragCoord);
     void main() {
       mainImage(fragColor, gl_FragCoord.xy);
-    }` + fragCode,
+    }` + (fragLib || '') + fragCode,
     attributes: {
       position: [[-1, -1], [-1, 1], [1, 1], [-1, -1], [1, 1], [1, -1]]
     },
@@ -62,8 +84,9 @@ export function makeColorSource(regl, size: Point, opts:{
   type: 'image' | 'vangogh',
   imageUrl?: string,
   parameter?: number, // TODO iMouse
+  fragLib?: string,
 }) {
-  const shader = makeShader(regl, shaders[opts.type]);
+  const shader = makeShader(regl, shaders[opts.type], opts.fragLib);
   const fbo = regl.framebuffer({
     color: regl.texture({
       type: 'float32',
