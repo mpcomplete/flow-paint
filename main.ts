@@ -465,7 +465,7 @@ regl.frame(function(context) {
     ctx.beginPath();
     ctx.moveTo(ox * screenCanvas.width, oy * screenCanvas.height);
     ctx.lineTo(px * screenCanvas.width, py * screenCanvas.height);
-    const toHex = (n) => (n < 16 ? '0' : '') + n.toString(16);
+    const toHex = (n) => (Math.round(n) < 16 ? '0' : '') + Math.round(n).toString(16);
     ctx.strokeStyle = `#${toHex(rgb[i])}${toHex(rgb[i+1])}${toHex(rgb[i+2])}`;
     ctx.stroke();
   }
@@ -473,5 +473,5 @@ regl.frame(function(context) {
   let t3 = performance.now();
 
   currentTick++;
-  console.log(`frame=${(deltaTime*1000).toFixed(2)}`, (t2 - t1).toFixed(2), (t3 - t2).toFixed(2));
+  // console.log(`frame=${(deltaTime*1000).toFixed(2)}`, (t2 - t1).toFixed(2), (t3 - t2).toFixed(2));
 });
