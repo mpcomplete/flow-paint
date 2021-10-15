@@ -6,10 +6,7 @@ import * as dragdrop from "./dragdrop"
 import * as dat from "dat.gui"
 import * as guiPresets from "./gui-presets.json"
 
-let webgl: WebGL2RenderingContext;
-const regl = Webgl2.overrideContextType(
-  () => Regl({canvas: "#regl-canvas", extensions: ['WEBGL_draw_buffers', 'OES_texture_float', 'OES_texture_float_linear', 'OES_texture_half_float', 'ANGLE_instanced_arrays']}),
-  (gl) => webgl = gl);
+const regl = Webgl2.overrideContextType(() => Regl({canvas: "#regl-canvas", extensions: ['WEBGL_draw_buffers', 'OES_texture_float', 'OES_texture_float_linear', 'OES_texture_half_float', 'ANGLE_instanced_arrays']}));
 
 var config:any = {
   numParticles: 10000,
@@ -448,9 +445,9 @@ regl.frame(function(context) {
   particles.fbo.swap();
 
   if (writeIdx == 0) {
-    webgl.readBuffer(webgl.COLOR_ATTACHMENT0);
+    regl._gl.readBuffer(regl._gl.COLOR_ATTACHMENT0);
     regl.read({data: particles.positions, framebuffer: particles.fbo.src});
-    webgl.readBuffer(webgl.COLOR_ATTACHMENT1);
+    regl._gl.readBuffer(regl._gl.COLOR_ATTACHMENT1);
     regl.read({data: particles.colors, framebuffer: particles.fbo.src});
   }
 

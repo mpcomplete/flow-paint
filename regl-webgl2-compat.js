@@ -28,14 +28,12 @@ var gl2Extensions = {
 
 var extensions = {};
 module.exports = {
-  overrideContextType: function (callback, withContext) {
+  overrideContextType: function (callback) {
     const webgl2 = this;
     // Monkey-patch context creation to override the context type.
     const origGetContext = HTMLCanvasElement.prototype.getContext
     HTMLCanvasElement.prototype.getContext = function (ignoredContextType, contextAttributes) {
-      var gl = webgl2.wrapGLContext(origGetContext.bind(this)("webgl2", contextAttributes), extensions);
-      withContext(gl);
-      return gl;
+      return webgl2.wrapGLContext(origGetContext.bind(this)("webgl2", contextAttributes), extensions);
     };
     // Execute the callback with overridden context type.
     var rv = callback();
