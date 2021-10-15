@@ -27,8 +27,8 @@ window.onload = function() {
   }
   addConfig('image', 'starry').options(['starry', 'face', 'forest', 'landscape', 'tree', 'try drag and drop']).onFinishChange((v) => loadImageAsset(v));
   addConfig('lineWidth', 0.5, 0.2, 20.0).step(.01);
-  addConfig('lineLength', 1, 1, 50.0).step(1);
-  addConfig('lineSpeed', 1., 1., 5.0).step(.1);
+  addConfig('lineLength', 4, 1, 50.0).step(1);
+  addConfig('lineSpeed', 2., 1., 10.0).step(.1);
   addConfig('variance', 1., 0.1, 3.).step(.1);
   addConfig('jaggies', 3., 0., 5.).step(1);
   addConfig('flowType', 'voronoi').options(['voronoi', 'fractal', 'simplex', 'sinusoid']);
@@ -313,8 +313,8 @@ const updateParticles = baseVertShader({
   uniform sampler2D sourceImage;
   uniform int readIdx;
   uniform int writeIdx;
-  uniform float maxAge;
-  uniform float maxSpeed;
+  uniform float lineLifetime;
+  uniform float lineSpeed;
   uniform float clockTime;
   uniform float iTime;
   uniform vec2 iResolution;
@@ -340,7 +340,7 @@ const updateParticles = baseVertShader({
     return texture(sourceImage, uvScaled);
   }
   void maybeReset(inout vec2 pos, inout vec2 newPos, inout vec3 color, inout float birth) {
-    float death = maxAge*(1. + hash3(vec3(gl_FragCoord.yx*.0013, clockTime)).x);
+    float death = lineLifetime*(1. + hash3(vec3(gl_FragCoord.yx*.0013, clockTime)).x);
     if ((clockTime - birth) > death || newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.) {
       newPos = randomPoint(vec2(gl_FragCoord.xy*.001), clockTime);
       pos = vec2(-1., -1.);
@@ -361,7 +361,7 @@ const updateParticles = baseVertShader({
 
     vec2 pos = texelFetch(particlePositions, ijRead, 0).zw;
     vec2 velocity = velocityAtPoint(pos, iTime, options);
-    vec2 newPos = pos + velocity * .002 * maxSpeed;
+    vec2 newPos = pos + velocity * .001 * lineSpeed;
 
     vec4 colors = texelFetch(particleColors, ijRead, 0);
 
@@ -376,12 +376,11 @@ const updateParticles = baseVertShader({
     sourceImage: () => sourceImageLoader.getTexture(),
     readIdx: regl.prop('readIdx'),
     writeIdx: regl.prop('writeIdx'),
-    // TODO: move to options
-    maxAge: () => config.lineLength,
-    maxSpeed: () => config.lineSpeed,
     clockTime: () => currentTick,
     iTime: () => animateTime,
     iResolution: () => [screenCanvas.width, screenCanvas.height],
+    lineLifetime: () => Math.max(1, config.lineLength / config.lineSpeed),
+    lineSpeed: () => config.lineSpeed,
     'options.useVoronoi': () => config.flowType == 'voronoi',
     'options.useFBM': () => config.flowType == 'fractal',
     'options.useSimplex': () => config.flowType == 'simplex',
@@ -443,6 +442,8 @@ regl.frame(function(context) {
 
   let readIdx = (currentTick-1 + config.numSegments) % config.numSegments;
   let writeIdx = (currentTick) % config.numSegments;
+  let drawIdx = (currentTick+1) % config.numSegments;
+
   updateParticles({readIdx: readIdx, writeIdx: writeIdx});
   particles.fbo.swap();
 
@@ -459,7 +460,7 @@ regl.frame(function(context) {
   ctx.lineWidth = config.lineWidth;
   let rgb = particles.colors;
   for (let part = 0; part < config.numParticles; part++) {
-    let i = writeIdx*config.numParticles*4 + part*4;
+    let i = drawIdx*config.numParticles*4 + part*4;
     let [ox, oy] = [particles.positions[i], particles.positions[i+1]];
     let [px, py] = [particles.positions[i+2], particles.positions[i+3]];
     if (ox < 0.)
@@ -477,4 +478,3 @@ regl.frame(function(context) {
   currentTick++;
   console.log(`frame=${(deltaTime*1000).toFixed(2)}`, (t2 - t1).toFixed(2), (t3 - t2).toFixed(2));
 });
-

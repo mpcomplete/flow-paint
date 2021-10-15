@@ -2,12 +2,12 @@
   "preset": "Starry Eve",
   "closed": false,
   "remembered": {
-    "Starry Eve": {
+    "Default": {
       "0": {
         "image": "starry",
-        "lineWidth": 0.5,
-        "lineLength": 0.2,
-        "lineSpeed": 1,
+        "lineWidth": 1,
+        "lineLength": 4,
+        "lineSpeed": 2,
         "variance": 1,
         "jaggies": 3,
         "flowType": "sinusoid",
@@ -19,8 +19,8 @@
       "0": {
         "image": "forest",
         "lineWidth": 2,
-        "lineLength": 0.35,
-        "lineSpeed": 1,
+        "lineLength": 12,
+        "lineSpeed": 2,
         "variance": 1,
         "jaggies": 5,
         "flowType": "voronoi",
@@ -32,8 +32,8 @@
       "0": {
         "image": "face",
         "lineWidth": 0.3,
-        "lineLength": 0.1,
-        "lineSpeed": 1,
+        "lineLength": 8,
+        "lineSpeed": 10,
         "variance": 0.5,
         "jaggies": 3,
         "flowType": "fractal",
@@ -45,11 +45,24 @@
       "0": {
         "image": "tree",
         "lineWidth": 0.5,
-        "lineLength": 0.2,
-        "lineSpeed": 1,
+        "lineLength": 8,
+        "lineSpeed": 4,
         "variance": 1,
         "jaggies": 1,
         "flowType": "fractal",
+        "varyFlowField": true,
+        "showFlowField": false
+      }
+    },
+    "Starry Eve": {
+      "0": {
+        "image": "starry",
+        "lineWidth": 1,
+        "lineLength": 8,
+        "lineSpeed": 2.6,
+        "variance": 1,
+        "jaggies": 3,
+        "flowType": "sinusoid",
         "varyFlowField": true,
         "showFlowField": false
       }
@@ -58,8 +71,8 @@
       "0": {
         "image": "landscape",
         "lineWidth": 0.5,
-        "lineLength": 0.2,
-        "lineSpeed": 1,
+        "lineLength": 8,
+        "lineSpeed": 4,
         "variance": 1,
         "jaggies": 3,
         "flowType": "fractal",
