@@ -1,10 +1,11 @@
 // TODO: fix image/shader choices
 
 import * as Regl from "regl"
+import * as dat from "dat.gui"
 import * as Webgl2 from "./regl-webgl2-compat.js"
 import * as dragdrop from "./dragdrop"
-import * as dat from "dat.gui"
 import * as guiPresets from "./gui-presets.json"
+import { makeColorSource } from "./image-shader"
 
 const regl = Webgl2.overrideContextType(() => Regl({canvas: "#regl-canvas", extensions: ['WEBGL_draw_buffers', 'OES_texture_float']}));
 
@@ -48,10 +49,9 @@ let particles: any = {
 };
 let reglCanvas;
 let screenCanvas;
-let sourceImageLoader;
+let colorSource;
 let animateTime = 0;
 let currentTick = 0;
-let fps = 30;
 function initFramebuffers() {
   reglCanvas = document.getElementById('regl-canvas') as HTMLCanvasElement;
   screenCanvas = document.getElementById('screen') as HTMLCanvasElement;
@@ -83,25 +83,8 @@ function initFramebuffers() {
 }
 
 const loadImageAsset = (name) => { if (imageAssets.includes(name)) initImageLoader(`images/${name}.jpg`); };
-const emptyTexture = regl.texture();
 function initImageLoader(imageUrl) {
-  let texture;
-  let statusDiv = document.querySelector('#status')!;
-  let image = new Image();
-  image.crossOrigin = 'anonymous';
-  image.src = imageUrl;
-  statusDiv.innerHTML = 'Loading...';
-  image.onload = function() {
-    texture = regl.texture(image);
-    statusDiv.innerHTML = '';
-  }
-  image.onerror = function() {
-    statusDiv.innerHTML = 'Error loading image';
-  }
-
-  sourceImageLoader = {
-    getTexture: () => texture,
-  };
+  colorSource = makeColorSource(regl, [screenCanvas.width, screenCanvas.height], {type: 'image', imageUrl: imageUrl});
   clearScreen();
 }
 
@@ -407,7 +390,7 @@ const updateParticles = baseVertShader({
   uniforms: {
     particlePositions: () => particles.fbo.src.color[0],
     particleColors: () => particles.fbo.src.color[1],
-    sourceImage: () => sourceImageLoader == null ? emptyTexture : sourceImageLoader.getTexture(),
+    sourceImage: () => colorSource.getTexture(),
     readIdx: regl.prop('readIdx'),
     writeIdx: regl.prop('writeIdx'),
     clockTime: () => currentTick,
@@ -467,7 +450,7 @@ regl.frame(function(context) {
   if (!particles.fbo)
     return;
 
-  if (sourceImageLoader && !sourceImageLoader.getTexture())
+  if (!colorSource.ensureData())
     return;
 
   if (config.varyFlowField)
