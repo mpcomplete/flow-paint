@@ -69,8 +69,6 @@ export function makeColorSource(regl, size: Point, opts:{
       type: 'float32',
       format: 'rgba',
       wrap: 'clamp',
-      // min: 'linear',
-      // mag: 'linear',
       width: size[0],
       height: size[1],
     }),
@@ -101,7 +99,7 @@ export function makeColorSource(regl, size: Point, opts:{
   return {
     draw: () => shader({texture: texture, parameter: opts.parameter}),
     ensureData: function() {
-      if (!ready && !waitImage) {
+      if (!waitImage) {
         regl({framebuffer: fbo})(() => {
           shader({texture: texture, parameter: opts.parameter, framebuffer: fbo});
           ready = true;

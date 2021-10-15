@@ -84,7 +84,7 @@ function initFramebuffers() {
 
 const loadImageAsset = (name) => { if (imageAssets.includes(name)) initImageLoader(`images/${name}.jpg`); };
 function initImageLoader(imageUrl) {
-  colorSource = makeColorSource(regl, [screenCanvas.width, screenCanvas.height], {type: 'image', imageUrl: imageUrl});
+  colorSource = makeColorSource(regl, [screenCanvas.width/4, screenCanvas.height/4], {type: 'image', imageUrl: imageUrl});
   clearScreen();
 }
 
@@ -349,7 +349,7 @@ const updateParticles = baseVertShader({
   }
   vec3 getColor(in vec2 uv) {
     if (colorAlgorithm == 0) {
-      return sampleTexture(uv);
+      return texture(sourceImage, uv).rgb;
     } else if (colorAlgorithm == 1) {
       return colorspill(uv, 1.+iTime*.02);
     } else if (colorAlgorithm == 2) {
@@ -450,6 +450,8 @@ regl.frame(function(context) {
   if (!particles.fbo)
     return;
 
+  let t0 = performance.now();
+
   if (!colorSource.ensureData())
     return;
 
@@ -499,5 +501,5 @@ regl.frame(function(context) {
   let t3 = performance.now();
 
   currentTick++;
-  // console.log(`frame=${(deltaTime*1000).toFixed(2)}`, (t2 - t1).toFixed(2), (t3 - t2).toFixed(2));
+  console.log(`frame=${(deltaTime*1000).toFixed(2)}`, (t1 - t0).toFixed(2), (t2 - t1).toFixed(2), (t3 - t2).toFixed(2));
 });
