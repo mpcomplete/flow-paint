@@ -1,4 +1,4 @@
-# Flow field
+# Flow Paint
 
 Live web version [here](http://mpcomplete.github.io/flow/).
 
