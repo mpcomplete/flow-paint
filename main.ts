@@ -17,21 +17,26 @@ var config:any = {
 };
 const imageAssets = ['starry', 'face', 'forest', 'landscape', 'tree'];
 window.onload = function() {
-  let gui = new dat.GUI({load: guiPresets});
+  let topgui = new dat.GUI({load: guiPresets});
+  let gui = topgui;
   gui.remember(config);
   const readableName = (n) => n.replace(/([A-Z])/g, ' $1').toLowerCase()
   function addConfig(name, initial, min?, max?) {
     config[name] = initial;
     return gui.add(config, name, min, max).name(readableName(name));
   }
+  gui = topgui.addFolder('Color source');
   addConfig('image', 'starry').options(imageAssets.concat(['colorspill', 'firerings', 'try drag and drop'])).onFinishChange((v) => loadImageAsset(v));
+  gui = topgui.addFolder('Line');
   addConfig('lineWidth', 0.5, 0.2, 20.0).step(.01);
   addConfig('lineLength', 4, 1, 50.0).step(1);
   addConfig('lineSpeed', 2., 1., 10.0).step(.1);
+  gui = topgui.addFolder('Flow options');
   addConfig('variance', 1., 0.1, 3.).step(.1);
   addConfig('jaggies', 3., 0., 5.).step(1);
   addConfig('flowType', 'voronoi').options(['voronoi', 'fractal', 'simplex', 'sinusoid']);
   addConfig('varyFlowField', true);
+  gui = topgui.addFolder('Debug');
   addConfig('showFlowField', true);
   addConfig('fps', 30).listen();
   gui.add(config, 'clear');

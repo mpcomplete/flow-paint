@@ -1,5 +1,5 @@
 {
-  "preset": "Fire Rings",
+  "preset": "Default",
   "closed": false,
   "remembered": {
     "Default": {
@@ -13,7 +13,7 @@
         "flowType": "voronoi",
         "varyFlowField": true,
         "showFlowField": false,
-        "fps": 39.14660714155227
+        "fps": 28.203970214692145
       }
     },
     "Oil Painting": {
@@ -59,14 +59,15 @@
     "Starry Eve": {
       "0": {
         "image": "starry",
-        "lineWidth": 1,
-        "lineLength": 8,
-        "lineSpeed": 2.6,
+        "lineWidth": 0.3,
+        "lineLength": 35,
+        "lineSpeed": 8,
         "variance": 1,
         "jaggies": 3,
-        "flowType": "sinusoid",
+        "flowType": "voronoi",
         "varyFlowField": true,
-        "showFlowField": false
+        "showFlowField": false,
+        "fps": 59.94815300700085
       }
     },
     "Fiery Sunset": {
@@ -111,5 +112,26 @@
       }
     }
   },
-  "folders": {}
+  "folders": {
+    "Color source": {
+      "preset": "Default",
+      "closed": false,
+      "folders": {}
+    },
+    "Line": {
+      "preset": "Default",
+      "closed": false,
+      "folders": {}
+    },
+    "Flow options": {
+      "preset": "Default",
+      "closed": false,
+      "folders": {}
+    },
+    "Debug": {
+      "preset": "Default",
+      "closed": true,
+      "folders": {}
+    }
+  }
 }
