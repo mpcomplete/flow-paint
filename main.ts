@@ -31,6 +31,7 @@ window.onload = function() {
   addConfig('flowType', 'voronoi').options(['voronoi', 'fractal', 'simplex', 'sinusoid']);
   addConfig('varyFlowField', true);
   addConfig('showFlowField', true);
+  addConfig('fps', 30).listen();
   gui.add(config, 'clear');
 
   initFramebuffers();
@@ -49,6 +50,7 @@ let screenCanvas;
 let sourceImageLoader;
 let animateTime = 0;
 let currentTick = 0;
+let fps = 30;
 function initFramebuffers() {
   reglCanvas = document.getElementById('regl-canvas') as HTMLCanvasElement;
   screenCanvas = document.getElementById('screen') as HTMLCanvasElement;
@@ -329,7 +331,7 @@ const updateParticles = baseVertShader({
   vec2 randomPoint(vec2 uv, float t) {
     return hash3(vec3(uv, t)).xy;
   }
-  vec4 sampleTexture(in vec2 uv) {
+  vec3 sampleTexture(in vec2 uv) {
     vec2 tsize = vec2(textureSize(sourceImage, 0));
     vec2 scale = vec2(iResolution.x/tsize.x, iResolution.y/tsize.y);
     vec2 uvScaled = uv;
@@ -343,14 +345,32 @@ const updateParticles = baseVertShader({
       uvScaled.y *= scale.y/scale.x;
       uvScaled.y += .5;
     }
-    return texture(sourceImage, uvScaled);
+    return texture(sourceImage, uvScaled).rgb;
+  }
+  vec3 colorsplat(vec2 uv, float t) {
+    vec3 p = vec3(uv, t);
+    p.xy = rotate(uv, fbm(p)*TAU);
+    return vec3(fbm(p+vec3(1.8)), fbm(p+vec3(11.5)), fbm(p+vec3(27.5)));
+  }
+  vec3 colorpow(vec2 uv, float t) {
+    vec3 p = vec3(uv, t);
+    p.xy = rotate((p.xy+1.)*.7, snoise(p)*TAU);
+    float f = snoise(p);
+    f = mod(f*2.1, 1.5);
+    vec3 fv = (f + vec3(.35, .2, .3));
+    return pow(.5 + .5 * sin(2. * fv), vec3(8.0));
+  }
+  vec3 getColor(in vec2 uv) {
+    // return sampleTexture(uv);
+    // return colorsplat(uv, iTime*.02);
+    return colorpow(uv, iTime*.01);
   }
   void maybeReset(inout vec2 pos, inout vec2 newPos, inout vec3 color, inout float birth) {
     float death = lineLifetime*(1. + hash3(vec3(gl_FragCoord.yx*.0013, clockTime)).x);
     if ((clockTime - birth) > death || newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.) {
       newPos = randomPoint(vec2(gl_FragCoord.xy*.001), clockTime);
       pos = vec2(-1., -1.);
-      color = sampleTexture(newPos).rgb*255.;
+      color = getColor(newPos)*255.;
       birth = clockTime;
     }
   }
@@ -429,6 +449,11 @@ let lastTime = 0;
 regl.frame(function(context) {
   let deltaTime = context.time - lastTime;
   lastTime = context.time;
+  { // moving average
+    let instantFPS = 1/deltaTime;
+    const N = 30;
+    config.fps = (instantFPS + N*config.fps)/(N+1);
+  }
 
   if (!particles.fbo)
     return;
