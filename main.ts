@@ -5,7 +5,7 @@ import * as dat from "dat.gui"
 import * as Webgl2 from "./regl-webgl2-compat.js"
 import * as dragdrop from "./dragdrop"
 import * as guiPresets from "./gui-presets.json"
-import { makeColorSource } from "./image-shader"
+import { makeColorSource } from "./color-source"
 
 const regl = Webgl2.overrideContextType(() => Regl({canvas: "#regl-canvas", extensions: ['WEBGL_draw_buffers', 'OES_texture_float']}));
 
