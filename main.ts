@@ -1,4 +1,4 @@
-// TODO: keep a rotating history of 10 positions; canvas lineTo can connect the last 10
+// TODO: fix image/shader choices
 
 import * as Regl from "regl"
 import * as Webgl2 from "./regl-webgl2-compat.js"
@@ -14,6 +14,7 @@ var config:any = {
   numSegments: 30,
   clear: () => clearScreen(),
 };
+const imageAssets = ['starry', 'face', 'forest', 'landscape', 'tree'];
 window.onload = function() {
   let gui = new dat.GUI({load: guiPresets});
   gui.remember(config);
@@ -22,7 +23,7 @@ window.onload = function() {
     config[name] = initial;
     return gui.add(config, name, min, max).name(readableName(name));
   }
-  addConfig('image', 'starry').options(['starry', 'face', 'forest', 'landscape', 'tree', 'try drag and drop']).onFinishChange((v) => loadImageAsset(v));
+  addConfig('image', 'starry').options(imageAssets.concat(['colorspill', 'firerings', 'try drag and drop'])).onFinishChange((v) => loadImageAsset(v));
   addConfig('lineWidth', 0.5, 0.2, 20.0).step(.01);
   addConfig('lineLength', 4, 1, 50.0).step(1);
   addConfig('lineSpeed', 2., 1., 10.0).step(.1);
@@ -81,7 +82,8 @@ function initFramebuffers() {
   loadImageAsset(config.image);
 }
 
-const loadImageAsset = (name) => initImageLoader(`images/${name}.jpg`);
+const loadImageAsset = (name) => { if (imageAssets.includes(name)) initImageLoader(`images/${name}.jpg`); };
+const emptyTexture = regl.texture();
 function initImageLoader(imageUrl) {
   let texture;
   let statusDiv = document.querySelector('#status')!;
@@ -139,7 +141,7 @@ const commonFrag = `#version 300 es
 precision highp float;
 precision highp sampler2D;
 
-struct Options {
+struct FieldOptions {
   bool useVoronoi;
   bool useFBM;
   bool useSimplex;
@@ -147,8 +149,8 @@ struct Options {
   float variance;
 };
 
-float PI = 3.14159269369;
-float TAU = 6.28318530718;
+const float PI = 3.14159269369;
+const float TAU = 6.28318530718;
 
 vec2 rotate(vec2 p, float angle) {
   return mat2(cos(angle), -sin(angle),
@@ -247,7 +249,7 @@ vec2 fbm2(vec3 p) {
 }
 
 // Voronoi noise
-vec2 voronoi(vec2 p, float t, Options options) {
+vec2 voronoi(vec2 p, float t, FieldOptions fieldOptions) {
   vec2 i = floor(p);
   vec2 f = fract(p);
 
@@ -268,15 +270,15 @@ vec2 voronoi(vec2 p, float t, Options options) {
   return rotate(normalize(v), PI/2.);
 }
 
-vec2 velocityAtPoint(vec2 p, float t, Options options) {
+vec2 velocityAtPoint(vec2 p, float t, FieldOptions fieldOptions) {
   t = snoise(vec3(t*.03, 0, 0));
-  p *= options.variance;
+  p *= fieldOptions.variance;
   vec2 v = vec2(1., 0.);
-  if (options.useVoronoi) {
-    v = voronoi(p*7., t, options);
-  } else if (options.useFBM) {
+  if (fieldOptions.useVoronoi) {
+    v = voronoi(p*7., t, fieldOptions);
+  } else if (fieldOptions.useFBM) {
     v = fbm2(vec3(p*2., t)) - .5;
-  } else if (options.useSimplex) {
+  } else if (fieldOptions.useSimplex) {
     v = snoise2(vec3(p*5., t)) - .5;
   } else {
     float th = (t - .5)*.4;
@@ -286,8 +288,8 @@ vec2 velocityAtPoint(vec2 p, float t, Options options) {
     v.y = sin(1.3 + TAU * sin(pr.x*4.5) * sin(pr.y*1.3) + (pr.x+.1)*(pr.y-.4 + th)*TAU*.7);
   }
   float a = 0.;
-  if (options.jaggies > 0.)
-    a = snoise(vec3(p*options.jaggies*11., t*3.)) - .5;
+  if (fieldOptions.jaggies > 0.)
+    a = snoise(vec3(p*fieldOptions.jaggies*11., t*3.)) - .5;
   return rotate(normalize(v), a * TAU/4.);
 }`;
 
@@ -321,12 +323,13 @@ const updateParticles = baseVertShader({
   uniform sampler2D sourceImage;
   uniform int readIdx;
   uniform int writeIdx;
-  uniform float lineLifetime;
-  uniform float lineSpeed;
   uniform float clockTime;
   uniform float iTime;
   uniform vec2 iResolution;
-  uniform Options options;
+  uniform float lineLifetime;
+  uniform float lineSpeed;
+  uniform int colorAlgorithm;
+  uniform FieldOptions fieldOptions;
 
   vec2 randomPoint(vec2 uv, float t) {
     return hash3(vec3(uv, t)).xy;
@@ -347,23 +350,28 @@ const updateParticles = baseVertShader({
     }
     return texture(sourceImage, uvScaled).rgb;
   }
-  vec3 colorsplat(vec2 uv, float t) {
+  vec3 colorspill(vec2 uv, float t) {
     vec3 p = vec3(uv, t);
     p.xy = rotate(uv, fbm(p)*TAU);
+    p.z *= 7.;
     return vec3(fbm(p+vec3(1.8)), fbm(p+vec3(11.5)), fbm(p+vec3(27.5)));
   }
-  vec3 colorpow(vec2 uv, float t) {
+  vec3 firerings(vec2 uv, float t) {
     vec3 p = vec3(uv, t);
     p.xy = rotate((p.xy+1.)*.7, snoise(p)*TAU);
-    float f = snoise(p);
-    f = mod(f*2.1, 1.5);
-    vec3 fv = (f + vec3(.35, .2, .3));
-    return pow(.5 + .5 * sin(2. * fv), vec3(8.0));
+    float f = snoise(p)+.5;
+    vec3 fv = (f + vec3(.25 + .15*sin(t*9.), .3, .25));
+    vec3 c = pow(.5 + .5 * sin(2. * fv), vec3(8.0));
+    return c;
   }
   vec3 getColor(in vec2 uv) {
-    // return sampleTexture(uv);
-    // return colorsplat(uv, iTime*.02);
-    return colorpow(uv, iTime*.01);
+    if (colorAlgorithm == 0) {
+      return sampleTexture(uv);
+    } else if (colorAlgorithm == 1) {
+      return colorspill(uv, 1.+iTime*.02);
+    } else if (colorAlgorithm == 2) {
+      return firerings(uv, iTime*.01);
+    }
   }
   void maybeReset(inout vec2 pos, inout vec2 newPos, inout vec3 color, inout float birth) {
     float death = lineLifetime*(1. + hash3(vec3(gl_FragCoord.yx*.0013, clockTime)).x);
@@ -386,7 +394,7 @@ const updateParticles = baseVertShader({
     ivec2 ijRead = ivec2(gl_FragCoord.x, readIdx);
 
     vec2 pos = texelFetch(particlePositions, ijRead, 0).zw;
-    vec2 velocity = velocityAtPoint(pos, iTime, options);
+    vec2 velocity = velocityAtPoint(pos, iTime, fieldOptions);
     vec2 newPos = pos + velocity * .001 * lineSpeed;
 
     vec4 colors = texelFetch(particleColors, ijRead, 0);
@@ -399,19 +407,20 @@ const updateParticles = baseVertShader({
   uniforms: {
     particlePositions: () => particles.fbo.src.color[0],
     particleColors: () => particles.fbo.src.color[1],
-    sourceImage: () => sourceImageLoader.getTexture(),
+    sourceImage: () => sourceImageLoader == null ? emptyTexture : sourceImageLoader.getTexture(),
     readIdx: regl.prop('readIdx'),
     writeIdx: regl.prop('writeIdx'),
     clockTime: () => currentTick,
     iTime: () => animateTime,
     iResolution: () => [screenCanvas.width, screenCanvas.height],
+    colorAlgorithm: () => (config.image == 'colorspill' ? 1 : config.image == 'firerings' ? 2 : 0),
     lineLifetime: () => Math.max(1, config.lineLength / config.lineSpeed),
     lineSpeed: () => config.lineSpeed,
-    'options.useVoronoi': () => config.flowType == 'voronoi',
-    'options.useFBM': () => config.flowType == 'fractal',
-    'options.useSimplex': () => config.flowType == 'simplex',
-    'options.jaggies': () => config.jaggies,
-    'options.variance': () => config.variance,
+    'fieldOptions.useVoronoi': () => config.flowType == 'voronoi',
+    'fieldOptions.useFBM': () => config.flowType == 'fractal',
+    'fieldOptions.useSimplex': () => config.flowType == 'simplex',
+    'fieldOptions.jaggies': () => config.jaggies,
+    'fieldOptions.variance': () => config.variance,
   },
 });
 
@@ -420,7 +429,7 @@ const drawFlowField = baseVertShader({
   in vec2 uv;
   uniform float iTime;
   out vec4 fragColor;
-  uniform Options options;
+  uniform FieldOptions fieldOptions;
 
   // Íñigo Quílez
   float udSegment( in vec2 p, in vec2 a, in vec2 b ) {
@@ -431,17 +440,17 @@ const drawFlowField = baseVertShader({
   }
   void main() {
     vec2 center = vec2(0.);
-    vec2 velocity = velocityAtPoint(uv, iTime, options);
+    vec2 velocity = velocityAtPoint(uv, iTime, fieldOptions);
     float c = udSegment(fract(uv*64.) - .5, center, velocity);
     fragColor.rgb = vec3(1. - sign(c));
   }`,
   uniforms: {
     iTime: () => animateTime,
-    'options.useVoronoi': () => config.flowType == 'voronoi',
-    'options.useFBM': () => config.flowType == 'fractal',
-    'options.useSimplex': () => config.flowType == 'simplex',
-    'options.jaggies': () => config.jaggies,
-    'options.variance': () => config.variance,
+    'fieldOptions.useVoronoi': () => config.flowType == 'voronoi',
+    'fieldOptions.useFBM': () => config.flowType == 'fractal',
+    'fieldOptions.useSimplex': () => config.flowType == 'simplex',
+    'fieldOptions.jaggies': () => config.jaggies,
+    'fieldOptions.variance': () => config.variance,
   },
 });
 
@@ -458,7 +467,7 @@ regl.frame(function(context) {
   if (!particles.fbo)
     return;
 
-  if (!sourceImageLoader.getTexture())
+  if (sourceImageLoader && !sourceImageLoader.getTexture())
     return;
 
   if (config.varyFlowField)

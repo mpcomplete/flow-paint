@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "target": "es6",
+    "lib": ["es2016", "dom"],
     "strictNullChecks": true,
     "resolveJsonModule": true,
     "moduleResolution": "node"

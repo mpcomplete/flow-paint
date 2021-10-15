@@ -1,18 +1,19 @@
 {
-  "preset": "Starry Eve",
+  "preset": "Fire Rings",
   "closed": false,
   "remembered": {
     "Default": {
       "0": {
         "image": "starry",
-        "lineWidth": 1,
-        "lineLength": 4,
-        "lineSpeed": 2,
+        "lineWidth": 0.3,
+        "lineLength": 35,
+        "lineSpeed": 8,
         "variance": 1,
         "jaggies": 3,
-        "flowType": "sinusoid",
+        "flowType": "voronoi",
         "varyFlowField": true,
-        "showFlowField": false
+        "showFlowField": false,
+        "fps": 39.14660714155227
       }
     },
     "Oil Painting": {
@@ -32,13 +33,14 @@
       "0": {
         "image": "face",
         "lineWidth": 0.3,
-        "lineLength": 8,
+        "lineLength": 39,
         "lineSpeed": 10,
-        "variance": 0.5,
+        "variance": 1,
         "jaggies": 3,
-        "flowType": "fractal",
+        "flowType": "sinusoid",
         "varyFlowField": true,
-        "showFlowField": false
+        "showFlowField": false,
+        "fps": 36.66345827427669
       }
     },
     "Windy Tree": {
@@ -78,6 +80,34 @@
         "flowType": "fractal",
         "varyFlowField": true,
         "showFlowField": false
+      }
+    },
+    "Fire Rings": {
+      "0": {
+        "image": "firerings",
+        "lineWidth": 0.3,
+        "lineLength": 35,
+        "lineSpeed": 8,
+        "variance": 1,
+        "jaggies": 3,
+        "flowType": "voronoi",
+        "varyFlowField": true,
+        "showFlowField": false,
+        "fps": 39.173686807355764
+      }
+    },
+    "Color Spill": {
+      "0": {
+        "image": "colorspill",
+        "lineWidth": 0.5,
+        "lineLength": 35,
+        "lineSpeed": 5,
+        "variance": 1,
+        "jaggies": 3,
+        "flowType": "fractal",
+        "varyFlowField": true,
+        "showFlowField": false,
+        "fps": 35.03465651203295
       }
     }
   },
