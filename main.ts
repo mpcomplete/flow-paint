@@ -14,6 +14,7 @@ var config:any = {
   clear: () => clearScreen(),
 };
 const imageAssets = ['starry', 'face', 'forest', 'landscape', 'tree'];
+const flowTypes = ['sinusoid', 'voronoi', 'fractal', 'simplex', 'raining'];
 window.onload = function() {
   let topgui = new dat.GUI({load: guiPresets});
   let gui = topgui;
@@ -33,7 +34,7 @@ window.onload = function() {
   gui = topgui.addFolder('Flow options');
   addConfig('variance', 1., 0.1, 3.).step(.1);
   addConfig('jaggies', 3., 0., 5.).step(1);
-  addConfig('flowType', 'voronoi').options(['voronoi', 'fractal', 'simplex', 'sinusoid']);
+  addConfig('flowType', flowTypes[0]).options(flowTypes);
   addConfig('varyFlowField', true);
   gui = topgui.addFolder('Debug');
   addConfig('showFlowField', true);
@@ -256,9 +257,7 @@ const baseFlowShader = (opts) => regl(Object.assign(opts, {
   ${fragLib}
 
   struct FieldOptions {
-    bool useVoronoi;
-    bool useFBM;
-    bool useSimplex;
+    int flowType;
     float jaggies;
     float variance;
   };
@@ -269,12 +268,14 @@ const baseFlowShader = (opts) => regl(Object.assign(opts, {
     t = snoise(vec3(t*.03, 0, 0));
     p *= fieldOptions.variance;
     vec2 v = vec2(1., 0.);
-    if (fieldOptions.useVoronoi) {
+    if (fieldOptions.flowType == ${flowTypes.indexOf('voronoi')}) {
       v = voronoi(p*7., t);
-    } else if (fieldOptions.useFBM) {
+    } else if (fieldOptions.flowType == ${flowTypes.indexOf('fractal')}) {
       v = fbm2(vec3(p*2., t)) - .5;
-    } else if (fieldOptions.useSimplex) {
+    } else if (fieldOptions.flowType == ${flowTypes.indexOf('simplex')}) {
       v = snoise2(vec3(p*5., t)) - .5;
+    } else if (fieldOptions.flowType == ${flowTypes.indexOf('raining')}) {
+      v = vec2(.1, 1.);
     } else {
       float th = (t - .5)*.4;
       vec2 pr = p * TAU/4.;
@@ -284,7 +285,7 @@ const baseFlowShader = (opts) => regl(Object.assign(opts, {
     }
     float a = 0.;
     if (fieldOptions.jaggies > 0.)
-      a = snoise(vec3(p*fieldOptions.jaggies*11., t*3.)) - .5;
+      a = snoise(vec3(p*(fieldOptions.jaggies-1.)*11., t+1.)) - .5;
     return rotate(normalize(v), a * TAU/4.);
   }` + opts.frag,
 
@@ -304,9 +305,7 @@ const baseFlowShader = (opts) => regl(Object.assign(opts, {
   },
   uniforms: Object.assign(opts.uniforms||{}, {
     iTime: () => animateTime,
-    'fieldOptions.useVoronoi': () => config.flowType == 'voronoi',
-    'fieldOptions.useFBM': () => config.flowType == 'fractal',
-    'fieldOptions.useSimplex': () => config.flowType == 'simplex',
+    'fieldOptions.flowType': () => flowTypes.indexOf(config.flowType),
     'fieldOptions.jaggies': () => config.jaggies,
     'fieldOptions.variance': () => config.variance,
   }),

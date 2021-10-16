@@ -16,6 +16,21 @@
         "fps": 37.61801931668846
       }
     },
+    "Starry Eve": {
+      "0": {
+        "image": "starry",
+        "animated": "",
+        "lineWidth": 1,
+        "lineLength": 8,
+        "lineSpeed": 2.6,
+        "variance": 1,
+        "jaggies": 3,
+        "flowType": "sinusoid",
+        "varyFlowField": true,
+        "showFlowField": false,
+        "fps": 38.9223338477964
+      }
+    },
     "Oil Painting": {
       "0": {
         "image": "forest",
@@ -57,19 +72,19 @@
         "showFlowField": false
       }
     },
-    "Starry Eve": {
+    "Rainy Tree": {
       "0": {
-        "image": "starry",
+        "image": "tree",
         "animated": "",
-        "lineWidth": 1,
-        "lineLength": 8,
-        "lineSpeed": 2.6,
-        "variance": 1,
-        "jaggies": 3,
-        "flowType": "sinusoid",
+        "lineWidth": 0.76,
+        "lineLength": 20,
+        "lineSpeed": 6,
+        "variance": 0.1,
+        "jaggies": 1,
+        "flowType": "raining",
         "varyFlowField": true,
         "showFlowField": false,
-        "fps": 38.9223338477964
+        "fps": 41.404598500120336
       }
     },
     "Fiery Sunset": {
