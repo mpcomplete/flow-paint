@@ -4,17 +4,18 @@ import * as Webgl2 from "./regl-webgl2-compat.js"
 import * as dragdrop from "./dragdrop"
 import * as guiPresets from "./gui-presets.json"
 import { makeColorSource } from "./color-source"
+import { Pointer, pointers } from "./pointers"
 
 const regl = Webgl2.overrideContextType(() => Regl({canvas: "#regl-canvas", extensions: ['WEBGL_draw_buffers', 'OES_texture_float']}));
 
 var config:any = {
   numParticles: 12000, // See initFramebuffers
-  // This is an optimization: Keep a history of 30 frames (line segments) so we only have to read the particle pixel buffer (which is slow) once per 30 frames.
-  numSegments: 30,
+  // This is an optimization: Keep a history of 10 frames (line segments) so we only have to read the particle pixel buffer (which is slow) once per N frames.
+  numSegments: 10,
   clear: () => clearScreen(),
 };
 const imageAssets = ['starry', 'face', 'forest', 'landscape', 'tree'];
-const flowTypes = ['sinusoid', 'voronoi', 'fractal', 'simplex', 'raining'];
+const flowTypes = ['sinusoid', 'voronoi', 'fractal', 'simplex', 'raining', 'custom'];
 window.onload = function() {
   let topgui = new dat.GUI({load: guiPresets});
   let gui = topgui;
@@ -34,8 +35,10 @@ window.onload = function() {
   gui = topgui.addFolder('Flow options');
   addConfig('variance', 1., 0.1, 3.).step(.1);
   addConfig('jaggies', 3., 0., 5.).step(1);
-  addConfig('flowType', flowTypes[0]).options(flowTypes);
-  addConfig('varyFlowField', true);
+  addConfig('flowType', flowTypes[0]).options(flowTypes).listen().onFinishChange(() => config.paintWithMouse = config.flowType == 'custom');
+  addConfig('animateFlowField', true);
+  addConfig('paintWithMouse', false).listen().onFinishChange((v) => {if (v) {console.log("paintChange=",v);copyFlowField({}); flowFieldFBO.swap(); config.flowType = 'custom';}});
+  addConfig('paintBrushSize', 2.5, 1., 10.);
   gui = topgui.addFolder('Debug');
   addConfig('showFlowField', true);
   addConfig('fps', 30).listen();
@@ -45,6 +48,8 @@ window.onload = function() {
 
   dragdrop.init();
   dragdrop.handlers.ondrop = (url) => initColorSource({type: 'image', imageUrl: url});
+
+  Pointer.init(reglCanvas);
 };
 
 let particles: any = {
@@ -55,6 +60,7 @@ let particles: any = {
 let reglCanvas;
 let screenCanvas;
 let colorSource;
+let flowFieldFBO;
 let animateTime = 0;
 let currentTick = 0;
 function initFramebuffers() {
@@ -83,6 +89,19 @@ function initFramebuffers() {
       particles.fbo?.destroy();
     }
   }
+
+  flowFieldFBO = createDoubleFBO(1, {
+    type: 'float32',
+    format: 'rgba',
+    wrap: 'clamp',
+    width: 256,
+    height: 256,
+  });
+  flowFieldFBO.src.color[0].subimage({
+    width: 256,
+    height: 256,
+    data: Array.from({length: 256*256}, (_, i) => [1,1,0,0]),
+  });
 
   if (config.image) {
     loadImageAsset(config.image);
@@ -261,12 +280,14 @@ const baseFlowShader = (opts) => regl(Object.assign(opts, {
     float jaggies;
     float variance;
   };
+  uniform vec2 iResolution;
   uniform float iTime;
   uniform FieldOptions fieldOptions;
+  uniform sampler2D flowField;
 
-  vec2 velocityAtPoint(vec2 p, float t) {
+  vec2 velocityAtPoint(vec2 uv, float t) {
     t = snoise(vec3(t*.03, 0, 0));
-    p *= fieldOptions.variance;
+    vec2 p = uv*fieldOptions.variance;
     vec2 v = vec2(1., 0.);
     if (fieldOptions.flowType == ${flowTypes.indexOf('voronoi')}) {
       v = voronoi(p*7., t);
@@ -276,12 +297,14 @@ const baseFlowShader = (opts) => regl(Object.assign(opts, {
       v = snoise2(vec3(p*5., t)) - .5;
     } else if (fieldOptions.flowType == ${flowTypes.indexOf('raining')}) {
       v = vec2(.1, 1.);
-    } else {
+    } else if (fieldOptions.flowType == ${flowTypes.indexOf('sinusoid')}) {
       float th = (t - .5)*.4;
       vec2 pr = p * TAU/4.;
       v.x = sin(TAU * sin(pr.x*1.7) * sin(pr.y*3.1) + (pr.x-.1 + th)*(pr.y+.2)*TAU);
       pr.y += sin(pr.x);
       v.y = sin(1.3 + TAU * sin(pr.x*4.5) * sin(pr.y*1.3) + (pr.x+.1)*(pr.y-.4 + th)*TAU*.7);
+    } else {  // custom
+      v = texture(flowField, uv).xy;
     }
     float a = 0.;
     if (fieldOptions.jaggies > 0.)
@@ -296,8 +319,7 @@ const baseFlowShader = (opts) => regl(Object.assign(opts, {
 
   void main () {
     uv = position * 0.5 + 0.5;
-    // HTML5 canvas has y=0 at the top, GL at the bottom.
-    gl_Position = vec4(position.x, -position.y, 0.0, 1.0);
+    gl_Position = vec4(position.xy, 0.0, 1.0);
   }`,
 
   attributes: {
@@ -305,6 +327,8 @@ const baseFlowShader = (opts) => regl(Object.assign(opts, {
   },
   uniforms: Object.assign(opts.uniforms||{}, {
     iTime: () => animateTime,
+    iResolution: () => [screenCanvas.width, screenCanvas.height],
+    flowField: () => flowFieldFBO.src.color[0],
     'fieldOptions.flowType': () => flowTypes.indexOf(config.flowType),
     'fieldOptions.jaggies': () => config.jaggies,
     'fieldOptions.variance': () => config.variance,
@@ -322,7 +346,6 @@ const updateParticles = baseFlowShader({
   uniform int readIdx;
   uniform int writeIdx;
   uniform float clockTime;
-  uniform vec2 iResolution;
   uniform float lineLifetime;
   uniform float lineSpeed;
 
@@ -367,16 +390,54 @@ const updateParticles = baseFlowShader({
     readIdx: regl.prop('readIdx'),
     writeIdx: regl.prop('writeIdx'),
     clockTime: () => currentTick,
-    iResolution: () => [screenCanvas.width, screenCanvas.height],
     lineLifetime: () => Math.max(1, config.lineLength / config.lineSpeed),
     lineSpeed: () => config.lineSpeed,
   },
 });
 
-const drawFlowField = baseFlowShader({
+const copyFlowField = baseFlowShader({
   frag: `
   in vec2 uv;
   out vec4 fragColor;
+
+  void main() {
+    vec2 velocity = velocityAtPoint(uv, iTime);
+    fragColor.xy = velocity;
+  }`,
+  framebuffer: () => flowFieldFBO.dst,
+});
+
+const paintFlowField = baseFlowShader({
+  frag: `
+  in vec2 uv;
+  out vec4 fragColor;
+  uniform vec4 iMouse;
+  uniform float brushSize;
+
+  void main() {
+    vec2 p = uv - iMouse.xy;
+    p.x *= iResolution.x/iResolution.y;
+    float d = exp(-dot(p,p) / brushSize);
+    vec2 flow = texelFetch(flowField, ivec2(gl_FragCoord.xy), 0).xy;
+    if (length(iMouse.zw) > .001) {
+      flow = normalize(iMouse.zw)*d + flow*(1.-d);
+    }
+    fragColor.xy = flow;
+  }`,
+  framebuffer: () => flowFieldFBO.dst,
+  uniforms: {
+    iMouse: regl.prop('iMouse'),
+    brushSize: () => .005*Math.pow(config.paintBrushSize/3, 1.5),
+  }
+});
+
+const drawIndicators = baseFlowShader({
+  frag: `
+  in vec2 uv;
+  out vec4 fragColor;
+  uniform vec4 iMouse;
+  uniform bool showFlowField;
+  uniform float brushSize;
 
   // Íñigo Quílez
   float udSegment( in vec2 p, in vec2 a, in vec2 b ) {
@@ -385,13 +446,32 @@ const drawFlowField = baseFlowShader({
     float h = clamp( dot(pa,ba)/(1.1*dot(ba,ba)), 0.0, 1.0 );
     return length(pa-h*ba) - .05;
   }
+  float circle(in vec2 p, float r) {
+    float d = length(p);
+    return step(r,d) - step(r+.01,d);
+  }
   void main() {
-    vec2 center = vec2(0.);
-    vec2 velocity = velocityAtPoint(uv, iTime);
-    float c = udSegment(fract(uv*64.) - .5, center, velocity);
-    fragColor.rgb = vec3(1. - sign(c));
+    // HTML5 canvas has y=0 at the top, GL at the bottom.
+    vec2 uvFlip = vec2(uv.x, 1.0 - uv.y);
+    if (showFlowField) {
+      vec2 velocity = velocityAtPoint(uvFlip, iTime);
+      float c = udSegment(fract(uvFlip*64.) - .5, vec2(0.), velocity);
+      fragColor.rgb = vec3(1. - sign(c));
+    }
+    if (iMouse.x >= 0.) {
+      vec2 p = uvFlip - iMouse.xy;
+      p.x *= iResolution.x/iResolution.y;
+      float d = exp(-dot(p,p) / brushSize);
+      float c = circle(p, d);
+      fragColor.r += c;
+    }
   }`,
   framebuffer: regl.prop('framebuffer'),
+  uniforms: {
+    showFlowField: () => config.showFlowField,
+    iMouse: regl.prop('iMouse'),
+    brushSize: () => .005*Math.pow(config.paintBrushSize/3, 1.5),
+  }
 });
 
 let lastTime = 0;
@@ -417,9 +497,6 @@ regl.frame(function(context) {
 
   regl.clear({color: [0, 0, 0, 0]});
 
-  if (config.showFlowField)
-    drawFlowField({});
-
   let t1 = performance.now();
 
   let readIdx = (currentTick-1 + config.numSegments) % config.numSegments;
@@ -435,6 +512,24 @@ regl.frame(function(context) {
     regl._gl.readBuffer(regl._gl.COLOR_ATTACHMENT1);
     regl.read({data: particles.colors, framebuffer: particles.fbo.src});
   }
+
+  let iMouse = [-1,-1,-1,-1];
+  if (config.paintWithMouse) {
+    for (let p of pointers) {
+      if (p.isDown) {
+        if (!p.userData.downAtTime)
+          p.userData.downAtTime = new Date().getTime();
+        let size = (new Date().getTime() - p.userData.downAtTime)*.001;
+        iMouse = [p.pos[0], 1 - p.pos[1], p.delta[0], -p.delta[1]];
+        paintFlowField({iMouse: iMouse});
+        flowFieldFBO.swap();
+      } else {
+        delete p.userData.downAtTime;
+      }
+    }
+  }
+
+  drawIndicators({iMouse: iMouse});
 
   let t2 = performance.now();
 
