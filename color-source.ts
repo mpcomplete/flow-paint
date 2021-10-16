@@ -56,6 +56,7 @@ function makeShader(regl, fragCode, fragLib) {
     }`,
     frag: `#version 300 es
     precision mediump float;
+    precision highp int;
     in vec2 uv;
     out vec4 fragColor;
     uniform sampler2D iChannel0;

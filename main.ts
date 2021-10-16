@@ -272,6 +272,7 @@ vec2 voronoi(vec2 p, float t) {
 const baseFlowShader = (opts) => regl(Object.assign(opts, {
   frag: `#version 300 es
   precision highp float;
+  precision highp int;
   precision highp sampler2D;
   ${fragLib}
 
