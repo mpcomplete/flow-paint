@@ -1,8 +1,9 @@
 type Point = [number, number];
+type Shader = {code: String, command?: any};
+let shaders:any = {};
+let regl;
 
-let shaders = [];
-
-shaders['firerings'] = `
+shaders['firerings'] = { code: `
 vec3 firerings(vec2 uv, float t) {
   vec3 p = vec3(uv, t);
   p.xy = rotate((p.xy+1.)*.7, snoise(p)*TAU);
@@ -13,9 +14,9 @@ vec3 firerings(vec2 uv, float t) {
 }
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   fragColor = vec4(firerings(uv, iTime*.01), 1.);
-}`;
+}`};
 
-shaders['colorspill'] = `
+shaders['colorspill'] = { code: `
 vec3 colorspill(vec2 uv, float t) {
   vec3 p = vec3(uv, t);
   p.xy = rotate(uv, fbm(p)*TAU);
@@ -24,12 +25,12 @@ vec3 colorspill(vec2 uv, float t) {
 }
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   fragColor = vec4(colorspill(uv, iTime*.02), 1.);
-}`;
+}`};
 
-shaders['image'] = `
+shaders['media'] = { code: `
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   vec2 tsize = vec2(textureSize(iChannel0, 0));
-  vec2 scale = vec2(iResolution.x/tsize.x, iResolution.y/tsize.y);
+  vec2 scale = iResolution.xy / tsize.xy;
   vec2 uvScaled = uv;
   if (scale.x > scale.y) {
     // We scaled in y (the smaller dim). Center uv, scale it, and un-center it.
@@ -42,9 +43,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     uvScaled.y += .5;
   }
   fragColor = texture(iChannel0, uvScaled);
-}`;
+}`};
 
-function makeShader(regl, fragCode, fragLib) {
+function makeShader(fragCode) {
   return regl({
     vert: `#version 300 es
     precision highp float;
@@ -66,7 +67,7 @@ function makeShader(regl, fragCode, fragLib) {
     void mainImage(out vec4 fragColor, in vec2 fragCoord);
     void main() {
       mainImage(fragColor, gl_FragCoord.xy);
-    }` + (fragLib || '') + fragCode,
+    }` + fragCode,
     attributes: {
       position: [[-1, -1], [-1, 1], [1, 1], [-1, -1], [1, 1], [1, -1]]
     },
@@ -81,56 +82,91 @@ function makeShader(regl, fragCode, fragLib) {
   });
 }
 
-export function makeColorSource(regl, size: Point, opts:{
-  type: 'image' | 'firerings' | 'colorspill',
-  imageUrl?: string,
-  parameter?: number, // TODO iMouse
-  fragLib?: string,
-}) {
-  let statusDiv = document.querySelector('#status')!;
+export class ColorSource {
+  private imageElement = new Image();
+  private videoElement = document.createElement('video');
+  private outputFBO;
+  private shader : Shader | null;
+  private texture;
+  private domElement : HTMLElement | null;
+  private animated = false;
+  private canDraw = false;
+  private didDraw = false;
 
-  const shader = makeShader(regl, shaders[opts.type], opts.fragLib);
-  const fbo = regl.framebuffer({
-    color: regl.texture({
-      type: 'float32',
-      format: 'rgba',
-      wrap: 'clamp',
-      width: size[0],
-      height: size[1],
-    }),
-    depthStencil: false,
-  });
+  public static create = function(reglObj, fragLib: string, size: Point) {
+    regl = reglObj;
+    for (let i of Object.keys(shaders))
+      shaders[i].command = makeShader(fragLib + shaders[i].code);
 
-  let animated = opts.type != 'image';
-  let readyToDraw = opts.type != 'image';
-  let texture;
-  if (opts.imageUrl) {
-    var image = new Image();
-    image.crossOrigin = 'anonymous';
-    image.src = opts.imageUrl;
-    texture = regl.texture();
-    statusDiv.innerHTML = 'Loading...';
-    image.onload = function() {
-      texture = regl.texture(image);
-      readyToDraw = true;
-      statusDiv.innerHTML = '';
-    }
-    image.onerror = function() {
-      statusDiv.innerHTML = 'Error loading image';
+    let instance = new ColorSource;
+    instance.outputFBO = regl.framebuffer({
+      color: regl.texture({
+        type: 'float32',
+        format: 'rgba',
+        wrap: 'clamp',
+        width: size[0],
+        height: size[1],
+      }),
+      depthStencil: false,
+    });
+    return instance;
+  };
+
+  public load(opts:{
+    type: 'media' | 'firerings' | 'colorspill',
+    mediaUrl?: string,
+  }) {
+    let statusDiv = document.querySelector('#status')!;
+
+    this.shader = shaders[opts.type];
+    this.texture?.destroy();
+    this.texture = null;
+    this.domElement = null;
+    this.animated = true;
+    this.canDraw = !opts.mediaUrl;
+    this.didDraw = false;
+
+    if (opts.mediaUrl) {
+      let attempts = [this.imageElement, this.videoElement];
+      let errors = 0;
+      for (let i = 0; i < 2; i++) {
+        let elem = attempts[i];
+
+        elem.crossOrigin = 'anonymous';
+        elem.src = opts.mediaUrl;
+        statusDiv.innerHTML = 'Loading...';
+
+        let onload = (function() {
+          this.canDraw = true;
+          this.domElement = elem;
+          this.texture = regl.texture(this.domElement);
+          statusDiv.innerHTML = '';
+        }).bind(this);
+
+        if (elem instanceof HTMLVideoElement) {
+          this.animated = true;
+          elem.autoplay = true;
+          elem.loop = true;
+          elem.addEventListener('loadeddata', onload);
+        } else {
+          this.animated = false;
+          elem.onload = onload;
+        }
+        elem.onerror = function() {
+          if (++errors >= 2)
+            statusDiv.innerHTML = 'Error loading media';
+        }
+      }
     }
   }
 
-  let drawFinished = false;
-  return {
-    ensureData: function() {
-      if (readyToDraw && (animated || !drawFinished)) {
-        regl({framebuffer: fbo})(() => {
-          shader({texture: texture, parameter: opts.parameter, framebuffer: fbo});
-          drawFinished = true;
-        });
-      }
-      return drawFinished;
-    },
-    getTexture: () => fbo.color[0],
-  };
+  public ensureData() {
+    if (this.canDraw && (this.animated || !this.didDraw)) {
+      this.shader!.command({texture: this.texture?.subimage(this.domElement), framebuffer: this.outputFBO});
+      this.didDraw = true;
+    }
+    return this.didDraw;
+  }
+
+  public getTexture() { return this.outputFBO.color[0]; }
 }

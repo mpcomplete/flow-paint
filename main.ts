@@ -3,7 +3,7 @@ import * as dat from "dat.gui"
 import * as Webgl2 from "./regl-webgl2-compat.js"
 import * as dragdrop from "./dragdrop"
 import * as guiPresets from "./gui-presets.json"
-import { makeColorSource } from "./color-source"
+import { ColorSource } from "./color-source"
 import { Pointer, pointers } from "./pointers"
 
 const regl = Webgl2.overrideContextType(() => Regl({canvas: "#regl-canvas", extensions: ['WEBGL_draw_buffers', 'OES_texture_float']}));
@@ -15,6 +15,7 @@ var config:any = {
   clear: () => clearScreen(),
 };
 const imageAssets = ['starry', 'face', 'forest', 'landscape', 'tree'];
+const videoAssets = ['city', 'elephants', 'field', 'sunflower'];
 const flowTypes = ['sinusoid', 'voronoi', 'fractal', 'simplex', 'raining', 'custom'];
 window.onload = function() {
   let topgui = new dat.GUI({load: guiPresets});
@@ -26,8 +27,9 @@ window.onload = function() {
     return gui.add(config, name, min, max).name(readableName(name));
   }
   gui = topgui.addFolder('Color source');
-  addConfig('image', 'starry').options(imageAssets.concat(['try drag and drop'])).listen().onFinishChange((v) => {if (v) {loadImageAsset(v); config.animated = '';}});
-  addConfig('animated', 'colorspill').options(['colorspill', 'firerings']).listen().onFinishChange((v) => {if (v) {loadShader(v); config.image = '';}});
+  addConfig('image', 'starry').options(imageAssets.concat(['try drag and drop'])).listen().onFinishChange((v) => {if (v) {loadImageAsset(v); config.video = config.algorithm = '';}});
+  addConfig('video', '').options(videoAssets.concat(['try drag and drop'])).listen().onFinishChange((v) => {if (v) {loadVideoAsset(v); config.image = config.algorithm = '';}});
+  addConfig('algorithm', '').options(['colorspill', 'firerings']).listen().onFinishChange((v) => {if (v) {loadShader(v); config.image = config.video = '';}});
   gui = topgui.addFolder('Brush options');
   addConfig('lineWidth', 0.5, 0.2, 20.0).step(.01);
   addConfig('lineLength', 4, 1, 50.0).step(1);
@@ -46,10 +48,24 @@ window.onload = function() {
 
   initFramebuffers();
 
-  dragdrop.init();
-  dragdrop.handlers.ondrop = (url) => initColorSource({type: 'image', imageUrl: url});
-
   Pointer.init(reglCanvas);
+
+  dragdrop.init();
+  dragdrop.handlers.ondrop = (url) => initColorSource({type: 'media', mediaUrl: url});
+
+  colorSource = ColorSource.create(regl, fragLib, [screenCanvas.width/4, screenCanvas.height/4]);
+  if (config.image) {
+    loadImageAsset(config.image);
+  } else if (config.video) {
+    // Need user interaction before video can play.
+    document.querySelector('#status')!.innerHTML = 'Click to play';
+    window.onclick = function() {
+      loadVideoAsset(config.video);
+      window.onclick = null;
+    };
+  } else if (config.algorithm) {
+    loadShader(config.algorithm);
+  }
 };
 
 let particles: any = {
@@ -59,8 +75,8 @@ let particles: any = {
 };
 let reglCanvas;
 let screenCanvas;
-let colorSource;
 let flowFieldFBO;
+let colorSource;
 let animateTime = 0;
 let currentTick = 0;
 function initFramebuffers() {
@@ -102,18 +118,13 @@ function initFramebuffers() {
     height: 256,
     data: Array.from({length: 256*256}, (_, i) => [1,1,0,0]),
   });
-
-  if (config.image) {
-    loadImageAsset(config.image);
-  } else if (config.animated) {
-    loadShader(config.animated);
-  }
 }
 
-const loadImageAsset = (name) => initColorSource({type: 'image', imageUrl: `images/${name}.jpg`});
-const loadShader = (name) => initColorSource({type: name, fragLib: fragLib});
+const loadImageAsset = (name) => initColorSource({type: 'media', mediaUrl: `assets/${name}.jpg`});
+const loadVideoAsset = (name) => initColorSource({type: 'media', mediaUrl: `assets/${name}.mp4`});
+const loadShader = (name) => initColorSource({type: name});
 function initColorSource(opts) {
-  colorSource = makeColorSource(regl, [screenCanvas.width/4, screenCanvas.height/4], opts);
+  colorSource.load(opts);
   clearScreen();
 }
 

@@ -19,7 +19,7 @@
     "Starry Eve": {
       "0": {
         "image": "starry",
-        "animated": "",
+        "algorithm": "",
         "lineWidth": 1,
         "lineLength": 8,
         "lineSpeed": 2.6,
@@ -47,7 +47,7 @@
     "Fuzzy Face": {
       "0": {
         "image": "face",
-        "animated": "",
+        "algorithm": "",
         "lineWidth": 0.3,
         "lineLength": 8,
         "lineSpeed": 10,
@@ -75,7 +75,7 @@
     "Rainy Tree": {
       "0": {
         "image": "tree",
-        "animated": "",
+        "algorithm": "",
         "lineWidth": 0.76,
         "lineLength": 20,
         "lineSpeed": 6,
@@ -103,7 +103,7 @@
     "Fire Rings": {
       "0": {
         "image": "",
-        "animated": "firerings",
+        "algorithm": "firerings",
         "lineWidth": 0.3,
         "lineLength": 35,
         "lineSpeed": 8,
@@ -118,7 +118,7 @@
     "Color Spill": {
       "0": {
         "image": "",
-        "animated": "colorspill",
+        "algorithm": "colorspill",
         "lineWidth": 0.5,
         "lineLength": 35,
         "lineSpeed": 5,
@@ -128,6 +128,24 @@
         "varyFlowField": true,
         "showFlowField": false,
         "fps": 33.50457986549519
+      }
+    },
+    "Field Walk": {
+      "0": {
+        "image": "",
+        "video": "field",
+        "algorithm": "",
+        "lineWidth": 2,
+        "lineLength": 2,
+        "lineSpeed": 10,
+        "variance": 1,
+        "jaggies": 3,
+        "flowType": "fractal",
+        "animateFlowField": true,
+        "paintWithMouse": false,
+        "paintBrushSize": 2.5,
+        "showFlowField": false,
+        "fps": 45.92191282988019
       }
     }
   },
