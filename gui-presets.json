@@ -136,7 +136,7 @@
         "video": "field",
         "algorithm": "",
         "lineWidth": 2,
-        "lineLength": 2,
+        "lineLength": 12,
         "lineSpeed": 10,
         "variance": 1,
         "jaggies": 3,
