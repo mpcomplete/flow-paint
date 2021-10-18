@@ -272,7 +272,7 @@ vec2 voronoi(vec2 p, float t) {
       vec2 diff = cell + cellCenter - f;
       float dist = dot(diff, diff);
       if (dist < minDist) {
-        dist = minDist;
+        minDist = dist;
         v = diff;
       }
     }
@@ -302,7 +302,7 @@ const baseFlowShader = (opts) => regl(Object.assign(opts, {
     vec2 p = uv*fieldOptions.variance;
     vec2 v = vec2(1., 0.);
     if (fieldOptions.flowType == ${flowTypes.indexOf('voronoi')}) {
-      v = voronoi(p*7., t);
+      v = voronoi(p*5., t);
     } else if (fieldOptions.flowType == ${flowTypes.indexOf('fractal')}) {
       v = fbm2(vec3(p*2., t)) - .5;
     } else if (fieldOptions.flowType == ${flowTypes.indexOf('simplex')}) {
@@ -504,7 +504,7 @@ regl.frame(function(context) {
   if (!colorSource.ensureData())
     return;
 
-  if (config.varyFlowField)
+  if (config.animateFlowField)
     animateTime += 1./30.;
 
   regl.clear({color: [0, 0, 0, 0]});

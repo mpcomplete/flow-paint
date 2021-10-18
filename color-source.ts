@@ -138,18 +138,17 @@ export class ColorSource {
 
         let onload = (function() {
           this.canDraw = true;
+          this.animated = i == 1;
           this.domElement = elem;
           this.texture = regl.texture(this.domElement);
           statusDiv.innerHTML = '';
         }).bind(this);
 
         if (elem instanceof HTMLVideoElement) {
-          this.animated = true;
           elem.autoplay = true;
           elem.loop = true;
           elem.addEventListener('loadeddata', onload);
         } else {
-          this.animated = false;
           elem.onload = onload;
         }
         elem.onerror = function() {
