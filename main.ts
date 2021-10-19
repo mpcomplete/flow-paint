@@ -6,7 +6,7 @@ import * as guiPresets from "./gui-presets.json"
 import { ColorSource } from "./color-source"
 import { Pointer, pointers } from "./pointers"
 
-const regl = Webgl2.overrideContextType(() => Regl({canvas: "#regl-canvas", extensions: ['WEBGL_draw_buffers', 'OES_texture_float']}));
+const regl = Webgl2.overrideContextType(() => Regl({canvas: "#regl-canvas", extensions: ['WEBGL_draw_buffers', 'OES_texture_float', 'OES_texture_float_linear', 'ANGLE_instanced_arrays']}));
 
 var config:any = {
   numParticles: 12000, // See initFramebuffers
@@ -31,7 +31,7 @@ window.onload = function() {
   addConfig('video', '').options(videoAssets.concat(['try drag and drop'])).listen().onFinishChange((v) => {if (v) {loadVideoAsset(v); config.image = config.algorithm = '';}});
   addConfig('algorithm', '').options(['colorspill', 'firerings']).listen().onFinishChange((v) => {if (v) {loadShader(v); config.image = config.video = '';}});
   gui = topgui.addFolder('Brush options');
-  addConfig('lineWidth', 0.5, 0.2, 20.0).step(.01);
+  addConfig('lineWidth', 1, 0.5, 10.0).step(.01);
   addConfig('lineLength', 4, 1, 50.0).step(1);
   addConfig('lineSpeed', 2., 1., 10.0).step(.1);
   gui = topgui.addFolder('Flow options');
@@ -43,6 +43,7 @@ window.onload = function() {
   addConfig('paintBrushSize', 2.5, 1., 10.);
   gui = topgui.addFolder('Debug');
   addConfig('showFlowField', true);
+  addConfig('toggle', false);
   addConfig('fps', 30).listen();
   gui.add(config, 'clear');
 
@@ -53,7 +54,7 @@ window.onload = function() {
   dragdrop.init();
   dragdrop.handlers.ondrop = (url) => initColorSource({type: 'media', mediaUrl: url});
 
-  colorSource = ColorSource.create(regl, fragLib, [screenCanvas.width/4, screenCanvas.height/4]);
+  colorSource = ColorSource.create(regl, fragLib, [reglCanvas.width/4, reglCanvas.height/4]);
   if (config.image) {
     loadImageAsset(config.image);
   } else if (config.video) {
@@ -69,30 +70,27 @@ window.onload = function() {
 };
 
 let particles: any = {
-  positions: Float32Array,
-  colors: Float32Array,
   fbo: null,
+  indexBuffer: Float32Array,
 };
 let reglCanvas;
-let screenCanvas;
+let screenFBO;
 let flowFieldFBO;
 let colorSource;
 let animateTime = 0;
 let currentTick = 0;
 function initFramebuffers() {
   reglCanvas = document.getElementById('regl-canvas') as HTMLCanvasElement;
-  screenCanvas = document.getElementById('screen') as HTMLCanvasElement;
-  reglCanvas.width = screenCanvas.width = window.innerWidth;
-  reglCanvas.height = screenCanvas.height = window.innerHeight;
+  reglCanvas.width = window.innerWidth;
+  reglCanvas.height = window.innerHeight;
 
   let sizes = [12000, 8000, 6000, 3000, 1000, 100];
   for (let i = 0; i < sizes.length; i++) {
     try {
       config.numParticles = sizes[i];
-      // Holds the particle position. particles[i, 0].xyzw = {lastPosX, lastPosY, posX, posY}
-      particles.positions = new Float32Array(config.numParticles * 4 * config.numSegments);
-      // Holds the particle color and birth time. particles[i, 0].colors = {r, g, b, birth}
-      particles.colors = new Float32Array(config.numParticles * 4 * config.numSegments);
+      // Create 2 buffers to hold particle data:
+      // * particles.fbo0[i, segment].xyzw = {lastPosX, lastPosY, posX, posY}
+      // * particles.fbo1[i, segment].xyzw = {r, g, b, birth}
       particles.fbo = createDoubleFBO(2, {
         type: 'float32',
         format: 'rgba',
@@ -105,6 +103,17 @@ function initFramebuffers() {
       particles.fbo?.destroy();
     }
   }
+  particles.indexBuffer = regl.buffer(Float32Array.from({length: config.numParticles}, (_, i) => i));
+
+  screenFBO = createFBO(1, {
+    type: 'float32',
+    format: 'rgba',
+    wrap: 'clamp',
+    min: 'linear',
+    mag: 'linear',
+    width: reglCanvas.width*2,
+    height: reglCanvas.height*2,
+  });
 
   flowFieldFBO = createDoubleFBO(1, {
     type: 'float32',
@@ -129,8 +138,8 @@ function initColorSource(opts) {
 }
 
 function clearScreen() {
-  let ctxDst = screenCanvas.getContext('2d') as CanvasRenderingContext2D;
-  ctxDst.clearRect(0, 0, screenCanvas.width, screenCanvas.height);
+  let c = .2;
+  regl.clear({color: [c,c,c,0], framebuffer: screenFBO});
 
   currentTick = 0;
 
@@ -138,6 +147,29 @@ function clearScreen() {
     width: config.numParticles,
     height: config.numSegments,
     data: Array.from({length: config.numParticles*config.numSegments}, (_, i) => [-1,-1,-1,-1]),
+  });
+  createDebugLines();
+}
+
+function createDebugLines() {
+  let data = Array.from({length: config.numParticles*config.numSegments}, (_, i) => [-1,-1,-1,-1]);
+  const gi = (p, s) => s*config.numParticles + p;
+  const set = (p, s, [x0, y0], [x1, y1]) => {
+    let i = gi(p, s);
+    data[i] = [x0, y0, x1, y1];
+  };
+  function makeLine(p, pts:Array<[number,number]>) {
+    let s = 0;
+    set(p, s++, [pts[0][0]-.01, pts[0][1]-.01], pts[0]);
+    for (let i = 0; i < pts.length-1; i++) {
+      set(p, s++, pts[i], pts[i+1]);
+    }
+  }
+  makeLine(0, [[.1, .1], [.6, .7], [.8, .4]]);
+  particles.fbo.src.color[0].subimage({
+    width: config.numParticles,
+    height: config.numSegments,
+    data: data,
   });
 }
 
@@ -344,7 +376,7 @@ const baseFlowShader = (opts) => regl(Object.assign(opts, {
   },
   uniforms: Object.assign(opts.uniforms||{}, {
     iTime: () => animateTime,
-    iResolution: () => [screenCanvas.width, screenCanvas.height],
+    iResolution: () => [reglCanvas.width, reglCanvas.height],
     sourceImage: () => colorSource.getTexture(),
     flowField: () => flowFieldFBO.src.color[0],
     'fieldOptions.flowType': () => flowTypes.indexOf(config.flowType),
@@ -374,7 +406,7 @@ const updateParticles = baseFlowShader({
     if ((clockTime - birth) > death || newPos.x < 0. || newPos.x > 1. || newPos.y < 0. || newPos.y > 1.) {
       newPos = randomPoint(vec2(gl_FragCoord.xy*.001), clockTime);
       pos = vec2(-1., -1.);
-      color = texture(sourceImage, newPos).rgb*255.;
+      color = texture(sourceImage, newPos).rgb;
       birth = clockTime;
     }
   }
@@ -447,10 +479,287 @@ const paintFlowField = baseFlowShader({
   }
 });
 
-const drawIndicators = baseFlowShader({
-  frag: `
+const drawLineWithMiter = regl({
+  vert: `#version 300 es
+  precision highp float;
+  in vec2 vertex;
+  in float particleIdx;
+  out vec4 vColor;
+  out vec2 vEdge;
+
+  uniform sampler2D particlePositions;
+  uniform sampler2D particleColors;
+  uniform int segmentIdx, prevSegmentIdx;
+  uniform float lineWidth;
+  uniform vec2 iResolution;
+
+  vec2 getNormal(vec2 p) {
+    return vec2(-p.y, p.x);
+  }
+  void main() {
+    ivec2 ijPrev = ivec2(particleIdx, prevSegmentIdx);
+    ivec2 ij = ivec2(particleIdx, segmentIdx);
+    vec4 posPrev = texelFetch(particlePositions, ijPrev, 0);
+    vec4 pos = texelFetch(particlePositions, ij, 0);
+    vec4 color = texelFetch(particleColors, ij, 0);
+
+    // Get 3 points to make 2 line segments.
+    vec2 p1 = posPrev.xy, p2 = pos.xy, p3 = pos.zw;
+    vec2 line1 = p2 - p1;
+    vec2 line2 = p3 - p2;
+    vec2 normal1 = getNormal(normalize(line1));
+    vec2 normal2 = getNormal(normalize(line2));
+
+    vec2 worldPos;
+    if (vertex.y < 0.) {  // Back point
+      if (p1.x < 0. || p2.x < 0.) {
+        vColor = vec4(0);
+        return;
+      }
+      worldPos = p1 + vertex.x * normal1 * lineWidth;
+    } else if (vertex.y < 1.) {  // Mid point
+      if (p2.x < 0. || p3.x < 0.) {
+        vColor = vec4(0);
+        return;
+      }
+      // vec2 tangent = normalize(normalize(normalize(line1)*iResolution.xy) + normalize(normalize(line2)*iResolution.xy));
+      vec2 tangent = normalize(normalize(line1) + normalize(line2));
+      vec2 miter = getNormal(tangent);
+      float invMiterLength = dot(miter, normal1);
+      if (p1.x < 0. || invMiterLength < .5) {
+        worldPos = p2 + vertex.x * normal2 * lineWidth + vertex.y * line2;
+      } else {
+        worldPos = p2 + vertex.x * miter * lineWidth / invMiterLength;
+      }
+    } else {  // Front point
+      if (p2.x < 0. || p3.x < 0.) {
+        vColor = vec4(0);
+        return;
+      }
+      worldPos = p3 + vertex.x * normal2 * lineWidth;
+    }
+
+    gl_Position = vec4(worldPos*2. - 1., 0, 1);
+    vEdge = .5*vertex + .5;
+    vColor = vec4(color.rgb, 1.);
+  }`,
+  frag: `#version 300 es
+  precision highp float;
+  in vec4 vColor;
+  in vec2 vEdge;
+  out vec4 fragColor;
+  uniform float lineWidth;
+  void main() {
+    vec2 dedge = fwidth(vEdge);  // Gives 1 / lineWidth projected along each axis (I think)
+    dedge.y *= .5;  // Line is half as long in Y axis
+    vec2 coverage = clamp(min(vEdge, 1. - vEdge) / dedge, vec2(0.), vec2(1.));
+    float alpha = coverage.x*coverage.y;
+    // Scale alpha further for really small linewidths. Does this look good though?
+    // alpha *= smoothstep(.0, 1., lineWidth*1000.*2.);
+    fragColor = vec4(vColor.rgb, vColor.a*alpha);
+  }`,
+
+  attributes: {
+    vertex: [[-1,-1], [1,-1], [-1,0], [1,0], [-1,1], [1,1]],
+    particleIdx: {
+      buffer: () => particles.indexBuffer,
+      divisor: 1,
+      stride: Uint32Array.BYTES_PER_ELEMENT,
+    }
+  },
+  elements: [[0,2,1], [1,2,3], [2,4,3], [3,4,5]],
+  primitive: () => "triangles",
+  instances: () => config.numParticles,
+
+  uniforms: {
+    particlePositions: () => particles.fbo.src.color[0],
+    particleColors: () => particles.fbo.src.color[1],
+    segmentIdx: regl.prop('segmentIdx'),
+    prevSegmentIdx: regl.prop('prevSegmentIdx'),
+    lineWidth: () => config.lineWidth * .0005,
+    iResolution: () => [reglCanvas.width, reglCanvas.height],
+  },
+
+  blend: {
+    enable: true,
+    func: {
+      src: 'src alpha',
+      dst: 'one minus src alpha',
+    },
+    equation: {
+      rgb: 'add',
+      alpha: 'add'
+    },
+  },
+
+  framebuffer: regl.prop('framebuffer'),
+});
+
+const drawLine = regl({
+  vert: `#version 300 es
+
+  precision highp float;
+  in vec2 vertex;
+  in vec2 edge;
+  in float particleIdx;
+  out vec4 vColor;
+  out vec2 vEdge;
+
+  uniform sampler2D particlePositions;
+  uniform sampler2D particleColors;
+  uniform int segmentIdx, prevSegmentIdx;
+  uniform float lineWidth;
+  uniform vec2 iResolution;
+
+  vec2 getNormal(vec2 p) {
+    return vec2(-p.y, p.x);
+  }
+  void main() {
+    ivec2 ij = ivec2(particleIdx, segmentIdx);
+    vec4 pos = texelFetch(particlePositions, ij, 0);
+    vec4 color = texelFetch(particleColors, ij, 0);
+
+    if (pos.x < 0. || pos.z < 0.) {
+      vColor = vec4(0.);
+      return;
+    }
+    vec2 forward = pos.zw - pos.xy;
+    vec2 across = normalize(vec2(forward.y, -forward.x));
+
+    vec2 worldPos = pos.xy + vertex.x * across * lineWidth + vertex.y * forward;
+    gl_Position = vec4(worldPos*2. - 1., 0., 1);
+    vEdge = edge;
+    vColor = color;
+  }`,
+  frag: `#version 300 es
+  precision highp float;
+  in vec4 vColor;
+  in vec2 vEdge;
+  out vec4 fragColor;
+  uniform float lineWidth;
+  void main() {
+    vec2 dedge = fwidth(vEdge);  // Gives 1 / lineWidth projected along each axis (I think)
+    dedge.y *= .5;  // Line is half as long in Y axis
+    vec2 coverage = clamp(min(vEdge, 1. - vEdge) / dedge, vec2(0.), vec2(1.));
+    float alpha = coverage.x*coverage.y;
+    // Scale alpha further for really small linewidths. Does this look good though?
+    // alpha *= smoothstep(.0, 1., lineWidth*1000.*2.);
+    fragColor = vec4(vColor.rgb, alpha);
+  }`,
+
+  attributes: {
+    vertex: [[-1,0], [1,0], [-1,1], [1,1]],
+    edge: [[0,0], [1,0], [0,1], [1,1]],
+    particleIdx: {
+      buffer: () => particles.indexBuffer,
+      divisor: 1,
+      stride: Uint32Array.BYTES_PER_ELEMENT,
+    }
+  },
+  elements: [[0,2,1], [1,2,3]],
+  primitive: () => "triangles",
+  instances: () => config.numParticles,
+
+  uniforms: {
+    particlePositions: () => particles.fbo.src.color[0],
+    particleColors: () => particles.fbo.src.color[1],
+    segmentIdx: regl.prop('segmentIdx'),
+    prevSegmentIdx: regl.prop('prevSegmentIdx'),
+    lineWidth: () => config.lineWidth * .0005,
+    iResolution: () => [reglCanvas.width, reglCanvas.height],
+  },
+
+  blend: {
+    enable: true,
+    func: {
+      src: 'src alpha',
+      dst: 'one minus src alpha',
+    },
+    equation: {
+      rgb: 'add',
+      alpha: 'add'
+    },
+  },
+
+  framebuffer: regl.prop('framebuffer'),
+});
+
+const instanceBevelJoin = [[0, 0], [1, 0], [0, 1]];
+const bevelJoin = regl({
+  vert: `#version 300 es
+  precision highp float;
+  in vec2 vertex;
+  in float particleIdx;
+  out vec4 vColor;
+
+  uniform sampler2D particlePositions;
+  uniform sampler2D particleColors;
+  uniform int segmentIdx, prevSegmentIdx;
+  uniform float lineWidth;
+  uniform vec2 iResolution;
+
+  void main() {
+    ivec2 ij = ivec2(particleIdx, segmentIdx);
+    ivec2 ijPrev = ivec2(particleIdx, prevSegmentIdx);
+    vec4 pos = texelFetch(particlePositions, ij, 0);
+    vec4 posPrev = texelFetch(particlePositions, ijPrev, 0);
+    vec4 color = texelFetch(particleColors, ij, 0);
+
+    vec2 p1 = posPrev.xy, p2 = pos.xy, p3 = pos.zw;
+    if (p1.x < 0. || p2.x < 0. || p3.x < 0.) {
+      vColor = vec4(0);
+      return;
+    }
+    vec2 tangent = normalize(normalize(p3 - p2) + normalize(p2 - p1));
+    vec2 normal = vec2(-tangent.y, tangent.x);
+    vec2 ab = p2 - p1;
+    vec2 cb = p2 - p3;
+    float sigma = sign(dot(ab + cb, normal));
+    vec2 abn = normalize(vec2(-ab.y, ab.x));
+    vec2 cbn = -normalize(vec2(-cb.y, cb.x));
+    vec2 vx = sigma * lineWidth * (sigma < 0.0 ? abn : cbn);
+    vec2 vy = sigma * lineWidth * (sigma < 0.0 ? cbn : abn);
+    vec2 point = p2 + vertex.x * vx + vertex.y * vy;
+
+    gl_Position = vec4(point*2. - 1., 0, 1);
+    // vColor = vec4(0,1,0,1);
+    vColor = color;
+  }`,
+
+  frag: `#version 300 es
+  precision highp float;
+  in vec4 vColor;
+  out vec4 fragColor;
+  void main() {
+    fragColor = vColor;
+  }`,
+  attributes: {
+    vertex: regl.buffer(instanceBevelJoin),
+    particleIdx: {
+      buffer: () => particles.indexBuffer,
+      divisor: 1,
+      stride: Uint32Array.BYTES_PER_ELEMENT,
+    }
+  },
+  count: instanceBevelJoin.length,
+  instances: () => config.numParticles,
+
+  uniforms: {
+    particlePositions: () => particles.fbo.src.color[0],
+    particleColors: () => particles.fbo.src.color[1],
+    segmentIdx: regl.prop('segmentIdx'),
+    prevSegmentIdx: regl.prop('prevSegmentIdx'),
+    lineWidth: () => config.lineWidth * .0005,
+  },
+
+  framebuffer: regl.prop("framebuffer"),
+});
+
+const blit = baseFlowShader({
+  frag:`
   in vec2 uv;
   out vec4 fragColor;
+  uniform sampler2D source;
   uniform vec4 iMouse;
   uniform bool showFlowField;
   uniform float brushSize;
@@ -467,12 +776,12 @@ const drawIndicators = baseFlowShader({
     return step(r,d) - step(r+.01,d);
   }
   void main() {
-    // HTML5 canvas has y=0 at the top, GL at the bottom.
-    vec2 uvFlip = vec2(uv.x, 1.0 - uv.y);
+    vec2 uvFlip = vec2(uv.x, 1. - uv.y);
+    fragColor = texture(source, uvFlip);
     if (showFlowField) {
       vec2 velocity = velocityAtPoint(uvFlip, iTime);
-      float c = udSegment(fract(uvFlip*64.) - .5, vec2(0.), velocity);
-      fragColor.rgb = vec3(1. - sign(c));
+      float c = udSegment(fract(uvFlip*64.) - .5, vec2(0), velocity);
+      fragColor.rgb += vec3(1. - sign(c));
     }
     if (iMouse.x >= 0.) {
       vec2 p = uvFlip - iMouse.xy;
@@ -482,12 +791,12 @@ const drawIndicators = baseFlowShader({
       fragColor.r += c;
     }
   }`,
-  framebuffer: regl.prop('framebuffer'),
   uniforms: {
-    showFlowField: () => config.showFlowField,
+    source: regl.prop('source'),
     iMouse: regl.prop('iMouse'),
+    showFlowField: () => config.showFlowField,
     brushSize: () => .005*Math.pow(config.paintBrushSize/3, 1.5),
-  }
+  },
 });
 
 let lastTime = 0;
@@ -509,7 +818,7 @@ regl.frame(function(context) {
     return;
 
   if (config.animateFlowField)
-    animateTime += 1./30.;
+    animateTime += 1./60.;
 
   regl.clear({color: [0, 0, 0, 0]});
 
@@ -517,56 +826,33 @@ regl.frame(function(context) {
 
   let readIdx = (currentTick-1 + config.numSegments) % config.numSegments;
   let writeIdx = (currentTick) % config.numSegments;
-  let drawIdx = (currentTick+1) % config.numSegments;
 
   updateParticles({readIdx: readIdx, writeIdx: writeIdx});
   particles.fbo.swap();
-
-  if (writeIdx == 0) {
-    regl._gl.readBuffer(regl._gl.COLOR_ATTACHMENT0);
-    regl.read({data: particles.positions, framebuffer: particles.fbo.src});
-    regl._gl.readBuffer(regl._gl.COLOR_ATTACHMENT1);
-    regl.read({data: particles.colors, framebuffer: particles.fbo.src});
-  }
 
   let iMouse = [-1,-1,-1,-1];
   if (config.paintWithMouse) {
     for (let p of pointers) {
       if (p.isDown) {
-        if (!p.userData.downAtTime)
-          p.userData.downAtTime = new Date().getTime();
-        let size = (new Date().getTime() - p.userData.downAtTime)*.001;
         iMouse = [p.pos[0], 1 - p.pos[1], p.delta[0], -p.delta[1]];
         paintFlowField({iMouse: iMouse});
         flowFieldFBO.swap();
-      } else {
-        delete p.userData.downAtTime;
       }
     }
   }
 
-  drawIndicators({iMouse: iMouse});
-
   let t2 = performance.now();
 
-  let ctx = screenCanvas.getContext('2d');
-  ctx.lineWidth = config.lineWidth;
-  let rgb = particles.colors;
-  for (let part = 0; part < config.numParticles; part++) {
-    let i = drawIdx*config.numParticles*4 + part*4;
-    let [ox, oy] = [particles.positions[i], particles.positions[i+1]];
-    let [px, py] = [particles.positions[i+2], particles.positions[i+3]];
-    if (ox < 0.)
-      continue;
-    ctx.beginPath();
-    ctx.moveTo(ox * screenCanvas.width, oy * screenCanvas.height);
-    ctx.lineTo(px * screenCanvas.width, py * screenCanvas.height);
-    const toHex = (n) => (Math.round(n) < 16 ? '0' : '') + Math.round(n).toString(16);
-    ctx.strokeStyle = `#${toHex(rgb[i])}${toHex(rgb[i+1])}${toHex(rgb[i+2])}`;
-    ctx.stroke();
-  }
+  // if (!config.pause) {
+    if (!config.toggle) {
+      drawLine({segmentIdx: writeIdx, prevSegmentIdx: readIdx, framebuffer: screenFBO});
+    } else {
+      drawLineWithMiter({segmentIdx: writeIdx, prevSegmentIdx: readIdx, framebuffer: screenFBO});
+    }
+  // }
 
   let t3 = performance.now();
+  blit({source: screenFBO, iMouse: iMouse});
 
   currentTick++;
   // console.log(`frame=${(deltaTime*1000).toFixed(2)}`, (t1 - t0).toFixed(2), (t2 - t1).toFixed(2), (t3 - t2).toFixed(2));
