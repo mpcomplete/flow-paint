@@ -16,7 +16,7 @@ var config:any = {
 };
 const imageAssets = ['starry', 'face', 'forest', 'landscape', 'tree'];
 const videoAssets = ['city', 'elephants', 'field', 'sunflower'];
-const flowTypes = ['sinusoid', 'voronoi', 'fractal', 'simplex', 'raining', 'custom'];
+const flowTypes = ['sinusoid', 'voronoi', 'fractal', 'simplex', 'raining', 'edge detect', 'custom'];
 window.onload = function() {
   let topgui = new dat.GUI({load: guiPresets});
   let gui = topgui;
@@ -296,6 +296,7 @@ const baseFlowShader = (opts) => regl(Object.assign(opts, {
   uniform float iTime;
   uniform FieldOptions fieldOptions;
   uniform sampler2D flowField;
+  uniform sampler2D sourceImage;
 
   vec2 velocityAtPoint(vec2 uv, float t) {
     t = snoise(vec3(t*.03, 0, 0));
@@ -309,6 +310,10 @@ const baseFlowShader = (opts) => regl(Object.assign(opts, {
       v = snoise2(vec3(p*5., t)) - .5;
     } else if (fieldOptions.flowType == ${flowTypes.indexOf('raining')}) {
       v = vec2(.1, 1.);
+    } else if (fieldOptions.flowType == ${flowTypes.indexOf('edge detect')}) {
+      vec3 source = texture(sourceImage, uv).rgb;
+      vec2 avg = source.rg + source.gb + source.rb - 1.5;
+      v = normalize(avg);
     } else if (fieldOptions.flowType == ${flowTypes.indexOf('sinusoid')}) {
       float th = (t - .5)*.4;
       vec2 pr = p * TAU/4.;
@@ -340,6 +345,7 @@ const baseFlowShader = (opts) => regl(Object.assign(opts, {
   uniforms: Object.assign(opts.uniforms||{}, {
     iTime: () => animateTime,
     iResolution: () => [screenCanvas.width, screenCanvas.height],
+    sourceImage: () => colorSource.getTexture(),
     flowField: () => flowFieldFBO.src.color[0],
     'fieldOptions.flowType': () => flowTypes.indexOf(config.flowType),
     'fieldOptions.jaggies': () => config.jaggies,
@@ -354,7 +360,6 @@ const updateParticles = baseFlowShader({
   layout(location = 1) out vec4 fragData1; // colors.xyz, birth
   uniform sampler2D particlePositions;
   uniform sampler2D particleColors;
-  uniform sampler2D sourceImage;
   uniform int readIdx;
   uniform int writeIdx;
   uniform float clockTime;
@@ -398,7 +403,6 @@ const updateParticles = baseFlowShader({
   uniforms: {
     particlePositions: () => particles.fbo.src.color[0],
     particleColors: () => particles.fbo.src.color[1],
-    sourceImage: () => colorSource.getTexture(),
     readIdx: regl.prop('readIdx'),
     writeIdx: regl.prop('writeIdx'),
     clockTime: () => currentTick,

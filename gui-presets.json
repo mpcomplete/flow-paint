@@ -62,14 +62,19 @@
     "Windy Tree": {
       "0": {
         "image": "tree",
-        "lineWidth": 0.5,
-        "lineLength": 8,
+        "video": "",
+        "algorithm": "",
+        "lineWidth": 1,
+        "lineLength": 12,
         "lineSpeed": 4,
         "variance": 1,
-        "jaggies": 1,
-        "flowType": "fractal",
-        "varyFlowField": true,
-        "showFlowField": false
+        "jaggies": 3,
+        "flowType": "edge detect",
+        "animateFlowField": true,
+        "paintWithMouse": false,
+        "paintBrushSize": 2.5,
+        "showFlowField": false,
+        "fps": 39.01129538023878
       }
     },
     "Rainy Tree": {
