@@ -479,25 +479,6 @@ const paintFlowField = baseFlowShader({
   }
 });
 
-const drawFrag =`#version 300 es
-precision highp float;
-in vec4 vColor;
-in vec2 vEdge;
-out vec4 fragColor;
-uniform float lineWidth;
-uniform bool toggle;
-void main() {
-  vec2 dedge = fwidth(vEdge);  // Gives 1 / lineWidth projected along each axis (I think)
-  dedge.y *= .5;  // Line is half as long in Y direction
-  vec2 coverage = clamp(min(vEdge / dedge, (1. - vEdge) / dedge), vec2(0.), vec2(1.));
-  // float alpha = coverage.x*coverage.y;
-  float alpha = coverage.x*coverage.y;
-  // Scale alpha further for really small linewidths. Does this look good though?
-  // alpha *= smoothstep(.0, 1., lineWidth*1000.*2.);
-  // fragColor = vec4(coverage.x,0,0, vColor.a);
-    fragColor = vec4(vColor.rgb, vColor.a*alpha);
-}`;
-
 const drawLineWithMiter = regl({
   vert: `#version 300 es
   precision highp float;
@@ -563,25 +544,22 @@ const drawLineWithMiter = regl({
     // vEdge = vec2(.5*vertex.x + .5, abs(vertex.y));
     vColor = vec4(color.rgb, 1.);
   }`,
-  frag: drawFrag,
-  // frag:`#version 300 es
-  // precision highp float;
-  // in vec4 vColor;
-  // in vec2 vEdge;
-  // out vec4 fragColor;
-  // uniform float lineWidth;
-  // void main() {
-  //   vec2 dedge = vec2(fwidth(vEdge.x), fwidth(vEdge.y));  // Gives 1 / lineWidth projected along each axis (I think)
-  //   dedge.y *= .5;
-  //   vec2 coverage = clamp(min(vEdge, 1. - vEdge) / dedge, vec2(0.), vec2(1.));
-  //   coverage.y = clamp(min(vEdge.y, 1. - vEdge.y) / dedge.y, 0., 1.);
-  //   float alpha = coverage.x*coverage.y;
-  //   // Scale alpha further for really small linewidths. Does this look good though?
-  //   // alpha *= smoothstep(.0, 1., lineWidth*1000.*2.);
-  //   fragColor = vec4((1.-coverage.y)*10.,0,0, vColor.a);
-  //   // fragColor = vec4(coverage.y,0,0, vColor.a);
-  //   // fragColor = vec4(vColor.rgb, vColor.a*alpha);
-  // }`,
+  frag: `#version 300 es
+  precision highp float;
+  in vec4 vColor;
+  in vec2 vEdge;
+  out vec4 fragColor;
+  uniform float lineWidth;
+  uniform bool toggle;
+  void main() {
+    vec2 dedge = fwidth(vEdge);  // Gives 1 / lineWidth projected along each axis (I think)
+    dedge.y *= .5;  // Line is half as long in Y direction
+    vec2 coverage = clamp(min(vEdge / dedge, (1. - vEdge) / dedge), vec2(0.), vec2(1.));
+    float alpha = coverage.x*coverage.y;
+    // Scale alpha further for really small linewidths. Does this look good though?
+    // alpha *= smoothstep(.0, 1., lineWidth*1000.*2.);
+      fragColor = vec4(vColor.rgb, vColor.a*alpha);
+  }`,
 
   attributes: {
     vertex: [[-1,-1], [1,-1], [-1,0], [1,0], [-1,1], [1,1]],
@@ -617,171 +595,6 @@ const drawLineWithMiter = regl({
   },
 
   framebuffer: regl.prop('framebuffer'),
-});
-
-const drawLine = regl({
-  vert: `#version 300 es
-
-  precision highp float;
-  in vec2 vertex;
-  in vec2 edge;
-  in float particleIdx;
-  out vec4 vColor;
-  out vec2 vEdge;
-
-  uniform sampler2D particlePositions;
-  uniform sampler2D particleColors;
-  uniform int segmentIdx, prevSegmentIdx;
-  uniform float lineWidth;
-  uniform vec2 iResolution;
-
-  vec2 getNormal(vec2 p) {
-    return vec2(-p.y, p.x);
-  }
-  void main() {
-    ivec2 ij = ivec2(particleIdx, segmentIdx);
-    vec4 pos = texelFetch(particlePositions, ij, 0);
-    vec4 color = texelFetch(particleColors, ij, 0);
-
-    if (pos.x < 0. || pos.z < 0.) {
-      vColor = vec4(0.);
-      return;
-    }
-    vec2 forward = pos.zw - pos.xy;
-    vec2 across = normalize(vec2(forward.y, -forward.x));
-
-    vec2 worldPos = pos.xy + vertex.x * across * lineWidth + vertex.y * forward;
-    gl_Position = vec4(worldPos*2. - 1., 0., 1);
-    vEdge = edge;
-    vColor = vec4(color.rgb, 1.);
-  }`,
-  frag: drawFrag,
-  // frag: `#version 300 es
-  // precision highp float;
-  // in vec4 vColor;
-  // in vec2 vEdge;
-  // out vec4 fragColor;
-  // uniform float lineWidth;
-  // uniform bool toggle;
-  // void main() {
-  //   vec2 dedge = fwidth(vEdge);  // Gives 1 / lineWidth projected along each axis (I think)
-  //   dedge.y *= .5;  // Line is half as long in Y direction
-  //   vec2 coverage = clamp(min(vEdge / dedge, (1. - vEdge) / dedge), vec2(0.), vec2(1.));
-  //   float alpha = coverage.x;
-  //   if (toggle)
-  //     alpha = coverage.x*coverage.y;
-  //   // Scale alpha further for really small linewidths. Does this look good though?
-  //   // alpha *= smoothstep(.0, 1., lineWidth*1000.*2.);
-  //   fragColor = vec4(vColor.rgb, alpha);
-  // }`,
-
-  attributes: {
-    vertex: [[-1,0], [1,0], [-1,1], [1,1]],
-    edge: [[0,0], [1,0], [0,1], [1,1]],
-    particleIdx: {
-      buffer: () => particles.indexBuffer,
-      divisor: 1,
-      stride: Uint32Array.BYTES_PER_ELEMENT,
-    }
-  },
-  elements: [[0,2,1], [1,2,3]],
-  primitive: () => "triangles",
-  instances: () => config.numParticles,
-
-  uniforms: {
-    particlePositions: () => particles.fbo.src.color[0],
-    particleColors: () => particles.fbo.src.color[1],
-    segmentIdx: regl.prop('segmentIdx'),
-    prevSegmentIdx: regl.prop('prevSegmentIdx'),
-    lineWidth: () => config.lineWidth * .0005,
-    iResolution: () => [reglCanvas.width, reglCanvas.height],
-    toggle: () => config.toggle,
-  },
-
-  blend: {
-    enable: true,
-    func: {
-      src: 'src alpha',
-      dst: 'one minus src alpha',
-    },
-    equation: {
-      rgb: 'add',
-      alpha: 'add'
-    },
-  },
-
-  framebuffer: regl.prop('framebuffer'),
-});
-
-const instanceBevelJoin = [[0, 0], [1, 0], [0, 1]];
-const bevelJoin = regl({
-  vert: `#version 300 es
-  precision highp float;
-  in vec2 vertex;
-  in float particleIdx;
-  out vec4 vColor;
-
-  uniform sampler2D particlePositions;
-  uniform sampler2D particleColors;
-  uniform int segmentIdx, prevSegmentIdx;
-  uniform float lineWidth;
-  uniform vec2 iResolution;
-
-  void main() {
-    ivec2 ij = ivec2(particleIdx, segmentIdx);
-    ivec2 ijPrev = ivec2(particleIdx, prevSegmentIdx);
-    vec4 pos = texelFetch(particlePositions, ij, 0);
-    vec4 posPrev = texelFetch(particlePositions, ijPrev, 0);
-    vec4 color = texelFetch(particleColors, ij, 0);
-
-    vec2 p1 = posPrev.xy, p2 = pos.xy, p3 = pos.zw;
-    if (p1.x < 0. || p2.x < 0. || p3.x < 0.) {
-      vColor = vec4(0);
-      return;
-    }
-    vec2 tangent = normalize(normalize(p3 - p2) + normalize(p2 - p1));
-    vec2 normal = vec2(-tangent.y, tangent.x);
-    vec2 ab = p2 - p1;
-    vec2 cb = p2 - p3;
-    float sigma = sign(dot(ab + cb, normal));
-    vec2 abn = normalize(vec2(-ab.y, ab.x));
-    vec2 cbn = -normalize(vec2(-cb.y, cb.x));
-    vec2 vx = sigma * lineWidth * (sigma < 0.0 ? abn : cbn);
-    vec2 vy = sigma * lineWidth * (sigma < 0.0 ? cbn : abn);
-    vec2 point = p2 + vertex.x * vx + vertex.y * vy;
-
-    gl_Position = vec4(point*2. - 1., 0, 1);
-    // vColor = vec4(0,1,0,1);
-    vColor = color;
-  }`,
-
-  frag: `#version 300 es
-  precision highp float;
-  in vec4 vColor;
-  out vec4 fragColor;
-  void main() {
-    fragColor = vColor;
-  }`,
-  attributes: {
-    vertex: regl.buffer(instanceBevelJoin),
-    particleIdx: {
-      buffer: () => particles.indexBuffer,
-      divisor: 1,
-      stride: Uint32Array.BYTES_PER_ELEMENT,
-    }
-  },
-  count: instanceBevelJoin.length,
-  instances: () => config.numParticles,
-
-  uniforms: {
-    particlePositions: () => particles.fbo.src.color[0],
-    particleColors: () => particles.fbo.src.color[1],
-    segmentIdx: regl.prop('segmentIdx'),
-    prevSegmentIdx: regl.prop('prevSegmentIdx'),
-    lineWidth: () => config.lineWidth * .0005,
-  },
-
-  framebuffer: regl.prop("framebuffer"),
 });
 
 const blit = baseFlowShader({
@@ -873,12 +686,7 @@ regl.frame(function(context) {
   let t2 = performance.now();
 
   // if (!config.pause) {
-    const x = config.toggle;
-    if (x) {
-      drawLine({segmentIdx: writeIdx, prevSegmentIdx: readIdx, framebuffer: screenFBO});
-    } else {
-      drawLineWithMiter({segmentIdx: writeIdx, prevSegmentIdx: readIdx, framebuffer: screenFBO});
-    }
+  drawLineWithMiter({ segmentIdx: writeIdx, prevSegmentIdx: readIdx, framebuffer: screenFBO });
   // }
 
   let t3 = performance.now();
