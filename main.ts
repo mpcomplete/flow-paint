@@ -31,7 +31,7 @@ window.onload = function() {
   addConfig('video', '').options(videoAssets.concat(['try drag and drop'])).listen().onFinishChange((v) => {if (v) {loadVideoAsset(v); config.image = config.algorithm = '';}});
   addConfig('algorithm', '').options(['colorspill', 'firerings']).listen().onFinishChange((v) => {if (v) {loadShader(v); config.image = config.video = '';}});
   gui = topgui.addFolder('Brush options');
-  addConfig('lineWidth', 1, 0.5, 10.0).step(.01);
+  addConfig('lineWidth', 1, 0.2, 10.0).step(.01);
   addConfig('lineLength', 4, 1, 50.0).step(1);
   addConfig('lineSpeed', 2., 1., 10.0).step(.1);
   gui = topgui.addFolder('Flow options');
@@ -43,7 +43,6 @@ window.onload = function() {
   addConfig('paintBrushSize', 2.5, 1., 10.);
   gui = topgui.addFolder('Debug');
   addConfig('showFlowField', true);
-  addConfig('toggle', false);
   addConfig('fps', 30).listen();
   gui.add(config, 'clear');
 
@@ -511,12 +510,13 @@ const drawLineWithMiter = regl({
     vec2 normal2 = getNormal(normalize(line2));
 
     vec2 worldPos;
+    float width = max(1., lineWidth)*.0005;  // Handle subpixel lines using low alpha, below
     if (vertex.y < 0.) {  // Back point
       if (p1.x < 0. || p2.x < 0.) {
         vColor = vec4(0);
         return;
       }
-      worldPos = p1 + vertex.x * normal1 * lineWidth;
+      worldPos = p1 + vertex.x * normal1 * width;
     } else if (vertex.y < 1.) {  // Mid point
       if (p2.x < 0. || p3.x < 0.) {
         vColor = vec4(0);
@@ -527,21 +527,20 @@ const drawLineWithMiter = regl({
       vec2 miter = getNormal(tangent);
       float invMiterLength = dot(miter, normal1);
       if (p1.x < 0. || invMiterLength < .5) {
-        worldPos = p2 + vertex.x * normal2 * lineWidth + vertex.y * line2;
+        worldPos = p2 + vertex.x * normal2 * width + vertex.y * line2;
       } else {
-        worldPos = p2 + vertex.x * miter * lineWidth / invMiterLength;
+        worldPos = p2 + vertex.x * miter * width / invMiterLength;
       }
     } else {  // Front point
       if (p2.x < 0. || p3.x < 0.) {
         vColor = vec4(0);
         return;
       }
-      worldPos = p3 + vertex.x * normal2 * lineWidth;
+      worldPos = p3 + vertex.x * normal2 * width;
     }
 
     gl_Position = vec4(worldPos*2. - 1., 0, 1);
-    vEdge = .5*vertex + .5;
-    // vEdge = vec2(.5*vertex.x + .5, abs(vertex.y));
+    vEdge = .5*vertex;
     vColor = vec4(color.rgb, 1.);
   }`,
   frag: `#version 300 es
@@ -550,15 +549,13 @@ const drawLineWithMiter = regl({
   in vec2 vEdge;
   out vec4 fragColor;
   uniform float lineWidth;
-  uniform bool toggle;
   void main() {
     vec2 dedge = fwidth(vEdge);  // Gives 1 / lineWidth projected along each axis (I think)
     dedge.y *= .5;  // Line is half as long in Y direction
-    vec2 coverage = clamp(min(vEdge / dedge, (1. - vEdge) / dedge), vec2(0.), vec2(1.));
+    vec2 coverage = clamp((.5 - abs(vEdge)) / dedge, vec2(0.), vec2(1.));
     float alpha = coverage.x*coverage.y;
-    // Scale alpha further for really small linewidths. Does this look good though?
-    // alpha *= smoothstep(.0, 1., lineWidth*1000.*2.);
-      fragColor = vec4(vColor.rgb, vColor.a*alpha);
+    alpha *= clamp(lineWidth, .0, 1.);  // Handle subpixel lines using low alpha
+    fragColor = vec4(vColor.rgb, vColor.a*alpha);
   }`,
 
   attributes: {
@@ -578,7 +575,7 @@ const drawLineWithMiter = regl({
     particleColors: () => particles.fbo.src.color[1],
     segmentIdx: regl.prop('segmentIdx'),
     prevSegmentIdx: regl.prop('prevSegmentIdx'),
-    lineWidth: () => config.lineWidth * .0005,
+    lineWidth: () => config.lineWidth,
     iResolution: () => [reglCanvas.width, reglCanvas.height],
   },
 

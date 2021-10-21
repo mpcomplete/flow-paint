@@ -1,24 +1,29 @@
 {
-  "preset": "Fire Rings",
+  "preset": "Fiery Sunset",
   "closed": false,
   "remembered": {
     "Default": {
       "0": {
         "image": "starry",
-        "lineWidth": 0.3,
+        "video": "",
+        "algorithm": "",
+        "lineWidth": 0.5,
         "lineLength": 35,
         "lineSpeed": 8,
         "variance": 1,
         "jaggies": 3,
-        "flowType": "voronoi",
-        "varyFlowField": true,
+        "flowType": "custom",
+        "animateFlowField": true,
+        "paintWithMouse": true,
+        "paintBrushSize": 2.5,
         "showFlowField": false,
-        "fps": 37.61801931668846
+        "fps": 64.17766187287617
       }
     },
     "Starry Eve": {
       "0": {
         "image": "starry",
+        "video": "",
         "algorithm": "",
         "lineWidth": 1,
         "lineLength": 8,
@@ -26,22 +31,29 @@
         "variance": 1,
         "jaggies": 3,
         "flowType": "sinusoid",
-        "varyFlowField": true,
+        "animateFlowField": true,
+        "paintWithMouse": false,
+        "paintBrushSize": 2.5,
         "showFlowField": false,
-        "fps": 38.9223338477964
+        "fps": 64.454808393616
       }
     },
     "Oil Painting": {
       "0": {
         "image": "forest",
+        "video": "",
+        "algorithm": "",
         "lineWidth": 2,
-        "lineLength": 12,
+        "lineLength": 41,
         "lineSpeed": 2,
-        "variance": 1,
+        "variance": 0.6000000000000001,
         "jaggies": 5,
         "flowType": "voronoi",
-        "varyFlowField": true,
-        "showFlowField": false
+        "animateFlowField": true,
+        "paintWithMouse": false,
+        "paintBrushSize": 2.5,
+        "showFlowField": false,
+        "fps": 64.55928791644051
       }
     },
     "Fuzzy Face": {
@@ -74,7 +86,7 @@
         "paintWithMouse": false,
         "paintBrushSize": 2.5,
         "showFlowField": false,
-        "fps": 39.01129538023878
+        "fps": 64.37394466109207
       }
     },
     "Rainy Tree": {
@@ -95,29 +107,37 @@
     "Fiery Sunset": {
       "0": {
         "image": "landscape",
-        "lineWidth": 0.7,
-        "lineLength": 8,
+        "video": "",
+        "algorithm": "",
+        "lineWidth": 0.5,
+        "lineLength": 12,
         "lineSpeed": 4,
         "variance": 1,
         "jaggies": 3,
         "flowType": "fractal",
-        "varyFlowField": true,
-        "showFlowField": false
+        "animateFlowField": true,
+        "paintWithMouse": false,
+        "paintBrushSize": 2.5,
+        "showFlowField": false,
+        "fps": 64.42798335928175
       }
     },
     "Fire Rings": {
       "0": {
         "image": "",
+        "video": "",
         "algorithm": "firerings",
-        "lineWidth": 0.5,
+        "lineWidth": 0.3,
         "lineLength": 35,
         "lineSpeed": 5,
         "variance": 0.5,
         "jaggies": 3,
         "flowType": "voronoi",
-        "varyFlowField": true,
+        "animateFlowField": true,
+        "paintWithMouse": false,
+        "paintBrushSize": 2.5,
         "showFlowField": false,
-        "fps": 38.80049004419134
+        "fps": 64.74034278580575
       }
     },
     "Color Spill": {
