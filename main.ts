@@ -488,10 +488,10 @@ uniform float lineWidth;
 uniform bool toggle;
 void main() {
   vec2 dedge = fwidth(vEdge);  // Gives 1 / lineWidth projected along each axis (I think)
-  // dedge.y *= .5;  // Line is half as long in Y direction
+  dedge.y *= .5;  // Line is half as long in Y direction
   vec2 coverage = clamp(min(vEdge / dedge, (1. - vEdge) / dedge), vec2(0.), vec2(1.));
   // float alpha = coverage.x*coverage.y;
-  float alpha = coverage.x;
+  float alpha = coverage.x*coverage.y;
   // Scale alpha further for really small linewidths. Does this look good though?
   // alpha *= smoothstep(.0, 1., lineWidth*1000.*2.);
   // fragColor = vec4(coverage.x,0,0, vColor.a);
@@ -559,8 +559,8 @@ const drawLineWithMiter = regl({
     }
 
     gl_Position = vec4(worldPos*2. - 1., 0, 1);
-    // vEdge = .5*vertex + .5;
-    vEdge = vec2(.5*vertex.x + .5, abs(vertex.y));
+    vEdge = .5*vertex + .5;
+    // vEdge = vec2(.5*vertex.x + .5, abs(vertex.y));
     vColor = vec4(color.rgb, 1.);
   }`,
   frag: drawFrag,
