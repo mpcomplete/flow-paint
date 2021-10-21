@@ -12,6 +12,7 @@ var config:any = {
   numParticles: 12000, // See initFramebuffers
   // This is an optimization: Keep a history of 10 frames (line segments) so we only have to read the particle pixel buffer (which is slow) once per N frames.
   numSegments: 10,
+  record: () => record(),
   clear: () => clearScreen(),
 };
 const imageAssets = ['starry', 'face', 'forest', 'landscape', 'tree'];
@@ -30,6 +31,7 @@ window.onload = function() {
   addConfig('image', 'starry').options(imageAssets.concat(['try drag and drop'])).listen().onFinishChange((v) => {if (v) {loadImageAsset(v); config.video = config.algorithm = '';}});
   addConfig('video', '').options(videoAssets.concat(['try drag and drop'])).listen().onFinishChange((v) => {if (v) {loadVideoAsset(v); config.image = config.algorithm = '';}});
   addConfig('algorithm', '').options(['colorspill', 'firerings']).listen().onFinishChange((v) => {if (v) {loadShader(v); config.image = config.video = '';}});
+  gui.add(config, 'record');
   gui = topgui.addFolder('Brush options');
   addConfig('lineWidth', 1, 0.2, 10.0).step(.01);
   addConfig('lineLength', 4, 1, 50.0).step(1);
@@ -638,6 +640,49 @@ const blit = baseFlowShader({
   },
 });
 
+function record() {
+  let canvas = document.querySelector("canvas")!;
+
+  // Optional frames per second argument.
+  let stream = canvas.captureStream(30);
+  let recordedChunks:Array<any> = [];
+
+  let options = { mimeType: "video/webm; codecs=vp9" };
+  let mediaRecorder = new MediaRecorder(stream, options);
+
+  mediaRecorder.ondataavailable = handleDataAvailable;
+  mediaRecorder.start();
+
+  function handleDataAvailable(event) {
+    console.log("data-available");
+    if (event.data.size > 0) {
+      recordedChunks.push(event.data);
+      console.log(recordedChunks);
+      download();
+    } else {
+      // ...
+    }
+  }
+  function download() {
+    let blob = new Blob(recordedChunks, {
+      type: "video/webm"
+    });
+    let url = URL.createObjectURL(blob);
+    let a = document.createElement("a");
+    document.body.appendChild(a);
+    a.style.display = 'none';
+    a.href = url;
+    a.download = "test.webm";
+    a.click();
+    window.URL.revokeObjectURL(url);
+  }
+
+  // demo: to download after 9sec
+  setTimeout(event => {
+    mediaRecorder.stop();
+  }, 3000);
+}
+
 let lastTime = 0;
 regl.frame(function(context) {
   let deltaTime = context.time - lastTime;
@@ -657,7 +702,7 @@ regl.frame(function(context) {
     return;
 
   if (config.animateFlowField)
-    animateTime += 1./60.;
+    animateTime += deltaTime;
 
   regl.clear({color: [0, 0, 0, 0]});
 
