@@ -479,6 +479,25 @@ const paintFlowField = baseFlowShader({
   }
 });
 
+const drawFrag =`#version 300 es
+precision highp float;
+in vec4 vColor;
+in vec2 vEdge;
+out vec4 fragColor;
+uniform float lineWidth;
+uniform bool toggle;
+void main() {
+  vec2 dedge = fwidth(vEdge);  // Gives 1 / lineWidth projected along each axis (I think)
+  // dedge.y *= .5;  // Line is half as long in Y direction
+  vec2 coverage = clamp(min(vEdge / dedge, (1. - vEdge) / dedge), vec2(0.), vec2(1.));
+  // float alpha = coverage.x*coverage.y;
+  float alpha = coverage.x;
+  // Scale alpha further for really small linewidths. Does this look good though?
+  // alpha *= smoothstep(.0, 1., lineWidth*1000.*2.);
+  // fragColor = vec4(coverage.x,0,0, vColor.a);
+    fragColor = vec4(vColor.rgb, vColor.a*alpha);
+}`;
+
 const drawLineWithMiter = regl({
   vert: `#version 300 es
   precision highp float;
@@ -540,24 +559,29 @@ const drawLineWithMiter = regl({
     }
 
     gl_Position = vec4(worldPos*2. - 1., 0, 1);
-    vEdge = .5*vertex + .5;
+    // vEdge = .5*vertex + .5;
+    vEdge = vec2(.5*vertex.x + .5, abs(vertex.y));
     vColor = vec4(color.rgb, 1.);
   }`,
-  frag: `#version 300 es
-  precision highp float;
-  in vec4 vColor;
-  in vec2 vEdge;
-  out vec4 fragColor;
-  uniform float lineWidth;
-  void main() {
-    vec2 dedge = fwidth(vEdge);  // Gives 1 / lineWidth projected along each axis (I think)
-    dedge.y *= .5;  // Line is half as long in Y axis
-    vec2 coverage = clamp(min(vEdge, 1. - vEdge) / dedge, vec2(0.), vec2(1.));
-    float alpha = coverage.x*coverage.y;
-    // Scale alpha further for really small linewidths. Does this look good though?
-    // alpha *= smoothstep(.0, 1., lineWidth*1000.*2.);
-    fragColor = vec4(vColor.rgb, vColor.a*alpha);
-  }`,
+  frag: drawFrag,
+  // frag:`#version 300 es
+  // precision highp float;
+  // in vec4 vColor;
+  // in vec2 vEdge;
+  // out vec4 fragColor;
+  // uniform float lineWidth;
+  // void main() {
+  //   vec2 dedge = vec2(fwidth(vEdge.x), fwidth(vEdge.y));  // Gives 1 / lineWidth projected along each axis (I think)
+  //   dedge.y *= .5;
+  //   vec2 coverage = clamp(min(vEdge, 1. - vEdge) / dedge, vec2(0.), vec2(1.));
+  //   coverage.y = clamp(min(vEdge.y, 1. - vEdge.y) / dedge.y, 0., 1.);
+  //   float alpha = coverage.x*coverage.y;
+  //   // Scale alpha further for really small linewidths. Does this look good though?
+  //   // alpha *= smoothstep(.0, 1., lineWidth*1000.*2.);
+  //   fragColor = vec4((1.-coverage.y)*10.,0,0, vColor.a);
+  //   // fragColor = vec4(coverage.y,0,0, vColor.a);
+  //   // fragColor = vec4(vColor.rgb, vColor.a*alpha);
+  // }`,
 
   attributes: {
     vertex: [[-1,-1], [1,-1], [-1,0], [1,0], [-1,1], [1,1]],
@@ -629,23 +653,27 @@ const drawLine = regl({
     vec2 worldPos = pos.xy + vertex.x * across * lineWidth + vertex.y * forward;
     gl_Position = vec4(worldPos*2. - 1., 0., 1);
     vEdge = edge;
-    vColor = color;
+    vColor = vec4(color.rgb, 1.);
   }`,
-  frag: `#version 300 es
-  precision highp float;
-  in vec4 vColor;
-  in vec2 vEdge;
-  out vec4 fragColor;
-  uniform float lineWidth;
-  void main() {
-    vec2 dedge = fwidth(vEdge);  // Gives 1 / lineWidth projected along each axis (I think)
-    dedge.y *= .5;  // Line is half as long in Y axis
-    vec2 coverage = clamp(min(vEdge, 1. - vEdge) / dedge, vec2(0.), vec2(1.));
-    float alpha = coverage.x*coverage.y;
-    // Scale alpha further for really small linewidths. Does this look good though?
-    // alpha *= smoothstep(.0, 1., lineWidth*1000.*2.);
-    fragColor = vec4(vColor.rgb, alpha);
-  }`,
+  frag: drawFrag,
+  // frag: `#version 300 es
+  // precision highp float;
+  // in vec4 vColor;
+  // in vec2 vEdge;
+  // out vec4 fragColor;
+  // uniform float lineWidth;
+  // uniform bool toggle;
+  // void main() {
+  //   vec2 dedge = fwidth(vEdge);  // Gives 1 / lineWidth projected along each axis (I think)
+  //   dedge.y *= .5;  // Line is half as long in Y direction
+  //   vec2 coverage = clamp(min(vEdge / dedge, (1. - vEdge) / dedge), vec2(0.), vec2(1.));
+  //   float alpha = coverage.x;
+  //   if (toggle)
+  //     alpha = coverage.x*coverage.y;
+  //   // Scale alpha further for really small linewidths. Does this look good though?
+  //   // alpha *= smoothstep(.0, 1., lineWidth*1000.*2.);
+  //   fragColor = vec4(vColor.rgb, alpha);
+  // }`,
 
   attributes: {
     vertex: [[-1,0], [1,0], [-1,1], [1,1]],
@@ -667,6 +695,7 @@ const drawLine = regl({
     prevSegmentIdx: regl.prop('prevSegmentIdx'),
     lineWidth: () => config.lineWidth * .0005,
     iResolution: () => [reglCanvas.width, reglCanvas.height],
+    toggle: () => config.toggle,
   },
 
   blend: {
@@ -844,7 +873,8 @@ regl.frame(function(context) {
   let t2 = performance.now();
 
   // if (!config.pause) {
-    if (!config.toggle) {
+    const x = config.toggle;
+    if (x) {
       drawLine({segmentIdx: writeIdx, prevSegmentIdx: readIdx, framebuffer: screenFBO});
     } else {
       drawLineWithMiter({segmentIdx: writeIdx, prevSegmentIdx: readIdx, framebuffer: screenFBO});

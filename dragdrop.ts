@@ -21,6 +21,7 @@ function handleDrop(e) {
   if (files.length) {
     let reader = new FileReader();
     reader.onload = function(e) {
+      console.log("got dataurl", e);
       if (e && e.target)
         handlers.ondrop(e.target.result as string);
     }
