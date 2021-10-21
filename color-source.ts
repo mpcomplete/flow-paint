@@ -126,7 +126,6 @@ export class ColorSource {
     this.canDraw = opts.type != 'media';
     this.didDraw = false;
 
-    console.log("reload src", opts.mediaUrl);
     if (opts.mediaUrl) {
       let attempts = [this.imageElement, this.videoElement];
       let errors = 0;

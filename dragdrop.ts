@@ -21,7 +21,6 @@ function handleDrop(e) {
   if (files.length) {
     let reader = new FileReader();
     reader.onload = function(e) {
-      console.log("got dataurl", e);
       if (e && e.target)
         handlers.ondrop(e.target.result as string);
     }
@@ -30,7 +29,6 @@ function handleDrop(e) {
     let html = e.dataTransfer.getData('text/html');
     let match = html && /\bsrc="?([^"\s]+)"?\s*/.exec(html);
     let url = match && match[1];
-    console.log("got url", url);
     handlers.ondrop(url);
   }
 }
