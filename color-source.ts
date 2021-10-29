@@ -84,7 +84,7 @@ function makeShader(fragCode) {
 
 export class ColorSource {
   private imageElement = new Image();
-  private videoElement = document.createElement('video');
+  private videoElement = document.createElement('video') as HTMLVideoElement;
   private outputFBO;
   private shader : Shader | null;
   private texture;
@@ -125,12 +125,13 @@ export class ColorSource {
     this.animated = true;
     this.canDraw = opts.type != 'media';
     this.didDraw = false;
+    this.videoElement.srcObject = null;
 
     if (opts.mediaUrl == 'webcam') {
       navigator.mediaDevices.getUserMedia({audio: false, video: {width: 1280, height: 720}})
       .then(function(mediaStream) {
         this.videoElement.srcObject = mediaStream;
-        this.videoElement.onloadedmetadata = function(e) {
+          this.videoElement.onloadedmetadata = function(e) {
           this.canDraw = true;
           this.canDraw = true;
           this.animated = true;
