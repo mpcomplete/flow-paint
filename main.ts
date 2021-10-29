@@ -16,7 +16,7 @@ var config:any = {
   clear: () => clearScreen(),
 };
 const imageAssets = ['starry', 'face', 'forest', 'landscape', 'tree'];
-const videoAssets = ['city', 'elephants', 'field', 'sunflower'];
+const videoAssets = ['city', 'elephants', 'field', 'sunflower', 'webcam'];
 const flowTypes = ['sinusoid', 'voronoi', 'fractal', 'simplex', 'raining', 'edge detect', 'custom'];
 window.onload = function() {
   let topgui = new dat.GUI({load: guiPresets});
@@ -131,7 +131,7 @@ function initFramebuffers() {
 }
 
 const loadImageAsset = (name) => initColorSource({type: 'media', mediaUrl: `assets/${name}.jpg`});
-const loadVideoAsset = (name) => initColorSource({type: 'media', mediaUrl: `assets/${name}.mp4`});
+const loadVideoAsset = (name) => initColorSource({type: 'media', mediaUrl: name == 'webcam' && 'webcam' || `assets/${name}.mp4`});
 const loadShader = (name) => initColorSource({type: name});
 function initColorSource(opts) {
   colorSource.load(opts);

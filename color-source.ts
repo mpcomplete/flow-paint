@@ -126,7 +126,20 @@ export class ColorSource {
     this.canDraw = opts.type != 'media';
     this.didDraw = false;
 
-    if (opts.mediaUrl) {
+    if (opts.mediaUrl == 'webcam') {
+      navigator.mediaDevices.getUserMedia({audio: false, video: {width: 1280, height: 720}})
+      .then(function(mediaStream) {
+        this.videoElement.srcObject = mediaStream;
+        this.videoElement.onloadedmetadata = function(e) {
+          this.canDraw = true;
+          this.canDraw = true;
+          this.animated = true;
+          this.domElement = this.videoElement;
+          this.videoElement.play();
+          this.texture = regl.texture(this.domElement);
+        }.bind(this);
+      }.bind(this));
+    } else if (opts.mediaUrl) {
       let attempts = [this.imageElement, this.videoElement];
       let errors = 0;
       for (let i = 0; i < 2; i++) {
