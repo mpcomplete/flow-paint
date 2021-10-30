@@ -174,11 +174,23 @@ export class ColorSource {
   }
 
   public ensureData() {
-    if (this.canDraw && (this.animated || !this.didDraw)) {
+    let shouldAnimate = this.animated && !this.videoElement.paused;
+    if (this.canDraw && (shouldAnimate || !this.didDraw)) {
       this.shader!.command({texture: this.texture?.subimage(this.domElement), framebuffer: this.outputFBO});
       this.didDraw = true;
     }
     return this.didDraw;
+  }
+
+  public pause() {
+    if (this.domElement != this.videoElement)
+      return false;
+    if (!this.videoElement.paused) {
+      this.videoElement.pause();
+    } else {
+      this.videoElement.play();
+    }
+    return this.videoElement.paused;
   }
 
   public getTexture() { return this.outputFBO.color[0]; }

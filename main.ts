@@ -26,9 +26,10 @@ window.onload = function() {
     return gui.add(config, name, min, max).name(readableName(name));
   }
   gui = topgui.addFolder('Color source');
-  addConfig('image', 'starry').options(imageAssets.concat(['try drag and drop'])).listen().onFinishChange((v) => {if (v) {loadImageAsset(v); config.video = config.algorithm = '';}});
-  addConfig('video', '').options(videoAssets.concat(['try drag and drop'])).listen().onFinishChange((v) => {if (v) {loadVideoAsset(v); config.image = config.algorithm = '';}});
-  addConfig('algorithm', '').options(['colorspill', 'firerings']).listen().onFinishChange((v) => {if (v) {loadShader(v); config.image = config.video = '';}});
+  addConfig('image', 'starry').options(imageAssets.concat(['try drag and drop'])).listen().onFinishChange((v) => {if (v) {loadImageAsset(v); config.video = config.algorithm = ''; guiPause.name('pause');}});
+  addConfig('video', '').options(videoAssets.concat(['try drag and drop'])).listen().onFinishChange((v) => {if (v) {loadVideoAsset(v); config.image = config.algorithm = ''; guiPause.name('pause');}});
+  addConfig('algorithm', '').options(['colorspill', 'firerings']).listen().onFinishChange((v) => {if (v) {loadShader(v); config.image = config.video = ''; guiPause.name('pause');}});
+  let guiPause = addConfig('pause', () => {let isPaused = colorSource.pause(); guiPause.name(isPaused ? 'resume' : 'pause');});
   let guiRecord = addConfig('record', () => {let isRecording = record(); guiRecord.name(isRecording ? 'stop' : 'record')});
   gui = topgui.addFolder('Brush options');
   addConfig('lineWidth', 1, 0.2, 10.0).step(.01);
