@@ -19,6 +19,7 @@ var config:any = {
 };
 const imageAssets = ['starry', 'face', 'forest', 'landscape', 'tree'];
 const videoAssets = ['city', 'elephants', 'field', 'sunflower', 'webcam'];
+const algorithmList = ['colorspill', 'firerings', 'spiral'];
 const flowTypes = ['sinusoid', 'voronoi', 'fractal', 'simplex', 'raining', 'edge detect', 'custom'];
 window.onload = function() {
   let topgui = new dat.GUI({load: guiPresets});
@@ -32,7 +33,7 @@ window.onload = function() {
   gui = topgui.addFolder('Color source');
   addConfig('image', 'starry').options(imageAssets.concat(['try drag and drop'])).listen().onFinishChange((v) => {if (v) {loadImageAsset(v); config.video = config.algorithm = ''; guiPause.name('pause');}});
   addConfig('video', '').options(videoAssets.concat(['try drag and drop'])).listen().onFinishChange((v) => {if (v) {loadVideoAsset(v); config.image = config.algorithm = ''; guiPause.name('pause');}});
-  addConfig('algorithm', '').options(['colorspill', 'firerings']).listen().onFinishChange((v) => {if (v) {loadShader(v); config.image = config.video = ''; guiPause.name('pause');}});
+  addConfig('algorithm', '').options(algorithmList).listen().onFinishChange((v) => {if (v) {loadShader(v); config.image = config.video = ''; guiPause.name('pause');}});
   let guiPause = addConfig('pause', () => {let isPaused = colorSource.pause(); guiPause.name(isPaused ? 'resume' : 'pause');});
   let guiRecord = addConfig('record', () => {let isRecording = record(); guiRecord.name(isRecording ? 'stop' : 'record')});
   gui = topgui.addFolder('Brush options');

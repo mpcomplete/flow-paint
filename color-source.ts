@@ -45,6 +45,89 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   fragColor = texture(iChannel0, uvScaled);
 }`};
 
+shaders['spiral'] = { code: `
+#define time 6.31
+#define phase 1.37
+#define colorAngle 1.36
+#define colorPhase (iTime*.2)
+#define spikes 1.0
+
+// Make a pattern of squares in a repeating grid.
+vec2 dupSquare(in vec2 p) {
+  vec2 ap = abs(sin(p*3.));
+  float r = max(ap.x, ap.y);
+  float angle = atan(p.y, p.x);
+
+  return r*vec2(cos(angle), sin(angle));
+}
+// Duplicate pattern in dupSquareConcentric squares.
+vec2 dupSquareConcentric(in vec2 p) {
+  vec2 ap = abs(p);
+  float r = max(ap.x, ap.y);
+  float angle = atan(p.y, p.x);
+
+  return sin(3.*r)*vec2(cos(angle), sin(angle));
+}
+// Duplicate pattern in a repeating grid.
+vec2 dupGrid(in vec2 p) {
+  return abs(sin(p*4.));
+}
+
+vec2 getTransform(in vec2 p, float t) {
+  int which = int(mod(t, 3.)+1.);
+
+  if (which == 2) {
+    p = dupSquare(rotate(p, 3.14));
+    p = rotate(p, -time*.3);
+    p = dupSquare(p);
+  } else {
+    p = dupSquareConcentric(p*1.5);
+  }
+  return p;
+}
+vec2 applyTransform(in vec2 p) {
+  float t = phase;
+  float pct = smoothstep(0., 1., mod(t, 1.));
+  return mix(getTransform(p, t), getTransform(p, t+1.), pct);
+}
+
+mat3 rotation(float angle, vec3 axis) {
+  vec3 a = normalize(axis);
+  float s = sin(angle);
+  float c = cos(angle);
+  float oc = 1.0 - c;
+
+  return mat3(oc * a.x * a.x + c,        oc * a.x * a.y - a.z * s,  oc * a.z * a.x + a.y * s,
+              oc * a.x * a.y + a.z * s,  oc * a.y * a.y + c,        oc * a.y * a.z - a.x * s,
+              oc * a.z * a.x - a.y * s,  oc * a.y * a.z + a.x * s,  oc * a.z * a.z + c);
+}
+
+vec4 gradient(float f) {
+  vec3 col1 = 0.5 + 0.5*sin(f*0.908 + vec3(0.941,1.000,0.271));
+	vec3 col2 = 0.5 + 0.5*sin(f*7.240 + vec3(0.611,0.556,1.000));
+	vec3 c = 1.888*pow(col1*col2, vec3(0.800,0.732,0.660));
+
+  vec3 axis = vec3(0.454,0.725,1.072);
+  c = rotation(colorAngle, axis)*c;
+
+  return vec4(c, 1.0);
+}
+float offset(float th) {
+  return .2*sin(25.*th)*sin(spikes);
+}
+vec4 tunnel(float th, float radius) {
+	return gradient(offset(th) + 2.*log(radius) - colorPhase);
+}
+
+void mainImage( out vec4 fragColor, in vec2 fragCoord ) {
+  vec2 p = -1.0 + 2.0 * fragCoord.xy / iResolution.xy;
+  p.x *= iResolution.x/iResolution.y;
+
+  p = rotate(p, -2.);
+  p = applyTransform(p);
+	fragColor = tunnel(atan(p.y, p.x), 2.0 * length(p));
+}`};
+
 function makeShader(fragCode) {
   return regl({
     vert: `#version 300 es
@@ -90,6 +173,7 @@ export class ColorSource {
   private texture;
   private domElement : HTMLElement | null;
   private animated = false;
+  private paused = false;
   private canDraw = false;
   private didDraw = false;
 
@@ -113,7 +197,7 @@ export class ColorSource {
   };
 
   public load(opts:{
-    type: 'media' | 'firerings' | 'colorspill',
+    type: 'media' | 'firerings' | 'colorspill' | 'spiral',
     mediaUrl?: string,
   }) {
     let statusDiv = document.querySelector('#status')!;
@@ -123,9 +207,12 @@ export class ColorSource {
     this.texture = null;
     this.domElement = null;
     this.animated = true;
+    this.paused = false;
     this.canDraw = opts.type != 'media';
     this.didDraw = false;
     this.videoElement.srcObject = null;
+    this.imageElement.onerror = null;
+    this.videoElement.onerror = null;
 
     if (opts.mediaUrl == 'webcam') {
       navigator.mediaDevices.getUserMedia({audio: false, video: {width: 1280, height: 720}})
@@ -174,7 +261,7 @@ export class ColorSource {
   }
 
   public ensureData() {
-    let shouldAnimate = this.animated && !this.videoElement.paused;
+    let shouldAnimate = this.animated && !this.paused;
     if (this.canDraw && (shouldAnimate || !this.didDraw)) {
       this.shader!.command({texture: this.texture?.subimage(this.domElement), framebuffer: this.outputFBO});
       this.didDraw = true;
@@ -183,14 +270,15 @@ export class ColorSource {
   }
 
   public pause() {
-    if (this.domElement != this.videoElement)
+    if (!this.animated)
       return false;
-    if (!this.videoElement.paused) {
+    this.paused = !this.paused;
+    if (this.paused) {
       this.videoElement.pause();
     } else {
       this.videoElement.play();
     }
-    return this.videoElement.paused;
+    return this.paused;
   }
 
   public getTexture() { return this.outputFBO.color[0]; }

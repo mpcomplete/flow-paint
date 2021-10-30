@@ -155,6 +155,24 @@
         "fps": 33.50457986549519
       }
     },
+    "Spirograph": {
+      "0": {
+        "image": "",
+        "video": "",
+        "algorithm": "spiral",
+        "lineWidth": 0.75,
+        "lineLength": 13,
+        "lineSpeed": 3,
+        "variance": 1,
+        "jaggies": 3,
+        "flowType": "edge detect",
+        "animateFlowField": true,
+        "paintWithMouse": false,
+        "paintBrushSize": 2.5,
+        "showFlowField": false,
+        "fps": 66.00502026115977
+      }
+    },
     "Field Walk": {
       "0": {
         "image": "",
