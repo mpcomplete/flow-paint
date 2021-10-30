@@ -6,6 +6,10 @@ import * as guiPresets from "./gui-presets.json"
 import { ColorSource } from "./color-source"
 import { Pointer, pointers } from "./pointers"
 
+if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+  location.replace(`https:${location.href.substring(location.protocol.length)}`);
+}
+
 const regl = Webgl2.overrideContextType(() => Regl({canvas: "#regl-canvas", extensions: ['WEBGL_draw_buffers', 'OES_texture_float', 'OES_texture_float_linear', 'ANGLE_instanced_arrays']}));
 
 var config:any = {
