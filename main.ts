@@ -3,6 +3,7 @@ import * as dat from "dat.gui"
 import * as Webgl2 from "./regl-webgl2-compat.js"
 import * as dragdrop from "./dragdrop"
 import * as guiPresets from "./gui-presets.json"
+import * as Png from "fast-png"
 import { ColorSource } from "./color-source"
 import { Pointer, pointers } from "./pointers"
 
@@ -30,12 +31,13 @@ window.onload = function() {
     config[name] = initial;
     return gui.add(config, name, min, max).name(readableName(name));
   }
+  let guiRecord = addConfig('recordVideo', () => {let isRecording = record(); guiRecord.name(isRecording ? 'stop' : 'record')});
+  addConfig('screenshot', saveImage);
   gui = topgui.addFolder('Color source');
-  addConfig('image', 'starry').options(imageAssets.concat(['try drag and drop'])).listen().onFinishChange((v) => {if (v) {loadImageAsset(v); config.video = config.algorithm = ''; guiPause.name('pause');}});
-  addConfig('video', '').options(videoAssets.concat(['try drag and drop'])).listen().onFinishChange((v) => {if (v) {loadVideoAsset(v); config.image = config.algorithm = ''; guiPause.name('pause');}});
-  addConfig('algorithm', '').options(algorithmList).listen().onFinishChange((v) => {if (v) {loadShader(v); config.image = config.video = ''; guiPause.name('pause');}});
-  let guiPause = addConfig('pause', () => {let isPaused = colorSource.pause(); guiPause.name(isPaused ? 'resume' : 'pause');});
-  let guiRecord = addConfig('record', () => {let isRecording = record(); guiRecord.name(isRecording ? 'stop' : 'record')});
+  addConfig('image', 'starry').options(imageAssets.concat(['try drag and drop'])).listen().onFinishChange((v) => {if (v) {loadImageAsset(v); config.video = config.algorithm = ''; guiPause.name('pause source');}});
+  addConfig('video', '').options(videoAssets.concat(['try drag and drop'])).listen().onFinishChange((v) => {if (v) {loadVideoAsset(v); config.image = config.algorithm = ''; guiPause.name('pause source');}});
+  addConfig('algorithm', '').options(algorithmList).listen().onFinishChange((v) => {if (v) {loadShader(v); config.image = config.video = ''; guiPause.name('pause source');}});
+  let guiPause = addConfig('pauseSource', () => {let isPaused = colorSource.pause(); guiPause.name(isPaused ? 'resume' : 'pause source');});
   gui = topgui.addFolder('Brush options');
   addConfig('lineWidth', 1, 0.2, 10.0).step(.01);
   addConfig('lineLength', 4, 1, 50.0).step(1);
@@ -193,6 +195,52 @@ function createDoubleFBO(count, props) {
       [this.src, this.dst] = [this.dst, this.src];
     }
   }
+}
+
+function downloadBlobAs(blob, filename) {
+  let url = URL.createObjectURL(blob);
+  let a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  window.URL.revokeObjectURL(url);
+}
+
+let mediaRecorder: MediaRecorder | null;
+function record() {
+  if (mediaRecorder) {
+    mediaRecorder.stop();
+    mediaRecorder = null;
+    return false;
+  }
+
+  let stream = reglCanvas.captureStream(30);
+  let recordedChunks:Array<any> = [];
+
+  mediaRecorder = new MediaRecorder(stream, {mimeType: 'video/webm; codecs=vp9'});
+
+  mediaRecorder.ondataavailable = function(event) {
+    recordedChunks.push(event.data);
+  };
+  mediaRecorder.onstop = function(event) {
+    let blob = new Blob(recordedChunks, {type: 'video/webm'});
+    downloadBlobAs(blob, 'flow.webm');
+  };
+  mediaRecorder.start();
+  return true;
+}
+
+function saveImage() {
+  let pixels = regl.read({framebuffer: screenFBO});
+  for (let i = 0; i < pixels.length; i += 4) {
+    pixels[i+0] *= 255;
+    pixels[i+1] *= 255;
+    pixels[i+2] *= 255;
+    pixels[i+3] = 255;  // Force full alpha
+  }
+  let png = Png.encode({width: reglCanvas.width*2, height: reglCanvas.height*2, data: pixels});
+  let blob = new Blob([png], {type: 'image/png'});
+  downloadBlobAs(blob, 'flow.png');
 }
 
 const fragLib = `
@@ -643,38 +691,6 @@ const blit = baseFlowShader({
     brushSize: () => .005*Math.pow(config.paintBrushSize/3, 1.5),
   },
 });
-
-let mediaRecorder: MediaRecorder | null;
-function record() {
-  if (mediaRecorder) {
-    mediaRecorder.stop();
-    mediaRecorder = null;
-    return false;
-  }
-
-  let stream = reglCanvas.captureStream(30);
-  let recordedChunks:Array<any> = [];
-
-  mediaRecorder = new MediaRecorder(stream, {mimeType: 'video/webm; codecs=vp9'});
-
-  mediaRecorder.ondataavailable = function(event) {
-    console.log('data available', event.data);
-    recordedChunks.push(event.data);
-  };
-  mediaRecorder.onstop = function(event) {
-    console.log('onstop', recordedChunks.length, event);
-    let blob = new Blob(recordedChunks, {type: 'video/webm'});
-    let url = URL.createObjectURL(blob);
-    let a = document.createElement('a');
-    a.style.display = 'none';
-    a.href = url;
-    a.download = 'flow.webm';
-    a.click();
-    window.URL.revokeObjectURL(url);
-  };
-  mediaRecorder.start();
-  return true;
-}
 
 let lastTime = 0;
 regl.frame(function(context) {
