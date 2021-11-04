@@ -34,9 +34,10 @@ window.onload = function() {
   let guiRecord = addConfig('recordVideo', () => {let isRecording = record(); guiRecord.name(isRecording ? 'stop' : 'record')});
   addConfig('screenshot', saveImage);
   gui = topgui.addFolder('Color source');
-  addConfig('image', 'starry').options(imageAssets.concat(['try drag and drop'])).listen().onFinishChange((v) => {if (v) {loadImageAsset(v); config.video = config.algorithm = ''; guiPause.name('pause source');}});
-  addConfig('video', '').options(videoAssets.concat(['try drag and drop'])).listen().onFinishChange((v) => {if (v) {loadVideoAsset(v); config.image = config.algorithm = ''; guiPause.name('pause source');}});
-  addConfig('algorithm', '').options(algorithmList).listen().onFinishChange((v) => {if (v) {loadShader(v); config.image = config.video = ''; guiPause.name('pause source');}});
+  addConfig('image', 'starry').options(imageAssets.concat(['try drag and drop'])).listen().onFinishChange((v) => {if (v) {config.video = config.algorithm = ''; guiPause.name('pause source'); loadColorSourceFromConfig();}});
+  addConfig('video', '').options(videoAssets.concat(['try drag and drop'])).listen().onFinishChange((v) => {if (v) {config.image = config.algorithm = ''; guiPause.name('pause source'); loadColorSourceFromConfig();}});
+  addConfig('algorithm', '').options(algorithmList).listen().onFinishChange((v) => {if (v) {config.image = config.video = ''; guiPause.name('pause source'); loadColorSourceFromConfig();}});
+  addConfig('fillEmptySpace', false).onFinishChange(() => resizeColorSource());
   let guiPause = addConfig('pauseSource', () => {let isPaused = colorSource.pause(); guiPause.name(isPaused ? 'resume' : 'pause source');});
   gui = topgui.addFolder('Brush options');
   addConfig('lineWidth', 1, 0.2, 10.0).step(.01);
@@ -47,7 +48,7 @@ window.onload = function() {
   addConfig('jaggies', 3., 0., 5.).step(1);
   addConfig('flowType', flowTypes[0]).options(flowTypes).listen().onFinishChange(() => config.paintWithMouse = config.flowType == 'custom');
   addConfig('animateFlowField', true);
-  addConfig('paintWithMouse', false).listen().onFinishChange((v) => {if (v) {console.log("paintChange=",v);copyFlowField({}); flowFieldFBO.swap(); config.flowType = 'custom';}});
+  addConfig('paintWithMouse', false).listen().onFinishChange((v) => {if (v) {copyFlowField({}); flowFieldFBO.swap(); config.flowType = 'custom';}});
   addConfig('paintBrushSize', 2.5, 1., 10.);
   gui = topgui.addFolder('Debug');
   addConfig('showFlowField', true);
@@ -59,21 +60,11 @@ window.onload = function() {
   Pointer.init(reglCanvas);
 
   dragdrop.init();
-  dragdrop.handlers.ondrop = (url) => initColorSource({type: 'media', mediaUrl: url});
+  dragdrop.handlers.ondrop = (url) => loadColorSource({type: 'media', mediaUrl: url});
 
-  colorSource = ColorSource.create(regl, fragLib, [reglCanvas.width/4, reglCanvas.height/4]);
-  if (config.image) {
-    loadImageAsset(config.image);
-  } else if (config.video) {
-    // Need user interaction before video can play.
-    document.querySelector('#status')!.innerHTML = 'Click to play';
-    window.onclick = function() {
-      loadVideoAsset(config.video);
-      window.onclick = null;
-    };
-  } else if (config.algorithm) {
-    loadShader(config.algorithm);
-  }
+  colorSource = ColorSource.create(regl, fragLib);
+  colorSource.onload = resizeCanvas;
+  loadColorSourceFromConfig({requestInteraction: true});
 };
 
 let particles: any = {
@@ -112,16 +103,6 @@ function initFramebuffers() {
   }
   particles.indexBuffer = regl.buffer(Float32Array.from({length: config.numParticles}, (_, i) => i));
 
-  screenFBO = createFBO(1, {
-    type: 'float32',
-    format: 'rgba',
-    wrap: 'clamp',
-    min: 'linear',
-    mag: 'linear',
-    width: reglCanvas.width*2,
-    height: reglCanvas.height*2,
-  });
-
   flowFieldFBO = createDoubleFBO(1, {
     type: 'float32',
     format: 'rgba',
@@ -136,12 +117,68 @@ function initFramebuffers() {
   });
 }
 
-const loadImageAsset = (name) => initColorSource({type: 'media', mediaUrl: `assets/${name}.jpg`});
-const loadVideoAsset = (name) => initColorSource({type: 'media', mediaUrl: name == 'webcam' && 'webcam' || `assets/${name}.mp4`});
-const loadShader = (name) => initColorSource({type: name});
-function initColorSource(opts) {
-  colorSource.load(opts);
+function loadColorSourceFromConfig(opts?: {requestInteraction?: boolean}) {
+  if (config.image) {
+    loadColorSource({type: 'media', mediaUrl: `assets/${config.image}.jpg`});
+  } else if (config.video) {
+    const load = () => loadColorSource({type: 'media', mediaUrl: config.video == 'webcam' && 'webcam' || `assets/${config.video}.mp4`});
+    if (opts?.requestInteraction) {
+      // Need user interaction before video can play.
+      document.querySelector('#status')!.innerHTML = 'Click to play';
+      window.onclick = function() {
+        document.querySelector('#status')!.innerHTML = '';
+        load();
+        window.onclick = null;
+      };
+    } else {
+      load();
+    }
+  } else if (config.algorithm) {
+    loadColorSource({type: config.algorithm});
+  }
+}
+
+function loadColorSource(opts) {
+  colorSource.load(Object.assign(opts, {matchSourceSize: !config.fillEmptySpace}), [window.innerWidth/4, window.innerHeight/4]);
   clearScreen();
+}
+
+function resizeColorSource() {
+  colorSource.resize([window.innerWidth / 4, window.innerHeight / 4], {matchSourceSize: !config.fillEmptySpace});
+  resizeCanvas();
+}
+
+function resizeCanvas() {
+  if (config.fillEmptySpace) {
+    reglCanvas.width = window.innerWidth;
+    reglCanvas.height = window.innerHeight;
+    reglCanvas.style.width = '100%';
+    reglCanvas.style.height = '100%';
+    reglCanvas.style.top = '0%';
+    reglCanvas.style.left = '0%';
+    reglCanvas.style.transform = null;
+  } else {
+    // Scale the source image to match window dimensions. Stretch/squish the smaller dimension by the amount we scaled the other dimension.
+    let scaleW = window.innerWidth / colorSource.size[0];
+    let scaleH = window.innerHeight / colorSource.size[1];
+    reglCanvas.width = scaleW < scaleH ? window.innerWidth : colorSource.size[0] * scaleH;
+    reglCanvas.height = scaleW > scaleH ? window.innerHeight : colorSource.size[1] * scaleW;
+    reglCanvas.style.width = scaleW < scaleH ? '100%' : `${reglCanvas.width}px`;
+    reglCanvas.style.height = scaleW > scaleH ? '100%' : `${reglCanvas.height}px`;
+    reglCanvas.style.top = '50%';
+    reglCanvas.style.left = '50%';
+    reglCanvas.style.transform = 'translate(-50%, -50%)';
+  }
+
+  screenFBO = createFBO(1, {
+    type: 'float32',
+    format: 'rgba',
+    wrap: 'clamp',
+    min: 'linear',
+    mag: 'linear',
+    width: reglCanvas.width*2,
+    height: reglCanvas.height*2,
+  });
 }
 
 function clearScreen() {

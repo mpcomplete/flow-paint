@@ -166,24 +166,107 @@ function makeShader(fragCode) {
 }
 
 export class ColorSource {
+  public onload = () => {};
+  public size: Point;
   private imageElement = new Image();
   private videoElement = document.createElement('video') as HTMLVideoElement;
   private outputFBO;
-  private shader : Shader | null;
+  private shader: Shader | null;
   private texture;
-  private domElement : HTMLElement | null;
+  private domElement: HTMLVideoElement | HTMLImageElement | null;
   private animated = false;
   private paused = false;
   private canDraw = false;
   private didDraw = false;
 
-  public static create = function(reglObj, fragLib: string, size: Point) {
+  public static create = function(reglObj, fragLib: string) {
     regl = reglObj;
     for (let i of Object.keys(shaders))
       shaders[i].command = makeShader(fragLib + shaders[i].code);
+    return new ColorSource;
+  };
 
-    let instance = new ColorSource;
-    instance.outputFBO = regl.framebuffer({
+  public load(opts:{type: 'media' | 'firerings' | 'colorspill' | 'spiral', mediaUrl?: string, matchSourceSize?: boolean}, outputSize: Point) {
+    let statusDiv = document.querySelector('#status')!;
+
+    this.shader = shaders[opts.type];
+    this.texture?.destroy();
+    this.texture = null;
+    this.outputFBO?.destroy();
+    this.outputFBO = null;
+    this.domElement = null;
+    this.animated = true;
+    this.paused = false;
+    this.canDraw = false;
+    this.didDraw = false;
+    this.videoElement.srcObject = null;
+    this.imageElement.onerror = null;
+    this.videoElement.onerror = null;
+    this.videoElement.onloadedmetadata = null;
+
+    if (opts.mediaUrl == 'webcam') {
+      statusDiv.innerHTML = 'Loading...';
+      navigator.mediaDevices.getUserMedia({audio: false, video: {width: outputSize[0], height: outputSize[1]}})
+      .then(function(mediaStream) {
+        this.videoElement.srcObject = mediaStream;
+        this.videoElement.onloadedmetadata = function(e) {
+          this.animated = true;
+          this.domElement = this.videoElement;
+          this.videoElement.play();
+          this.texture = regl.texture(this.domElement);
+          this.handleLoad(outputSize, {matchSourceSize: opts.matchSourceSize});
+          statusDiv.innerHTML = '';
+        }.bind(this);
+      }.bind(this));
+    } else if (opts.mediaUrl) {
+      statusDiv.innerHTML = 'Loading...';
+
+      let attempts = [this.imageElement, this.videoElement];
+      let errors = 0;
+      for (let i = 0; i < 2; i++) {
+        let elem = attempts[i];
+
+        elem.crossOrigin = 'anonymous';
+        elem.src = opts.mediaUrl;
+
+        let onload = (function(e) {
+          this.animated = i == 1;
+          this.domElement = elem;
+          this.texture = regl.texture(this.domElement);
+          this.handleLoad(outputSize, {matchSourceSize: opts.matchSourceSize});
+          statusDiv.innerHTML = '';
+        }).bind(this);
+
+        if (elem instanceof HTMLVideoElement) {
+          elem.autoplay = true;
+          elem.loop = true;
+          elem.addEventListener('loadeddata', onload, {once: true});
+        } else {
+          elem.onload = onload;
+        }
+        elem.onerror = function() {
+          if (++errors >= 2)
+            statusDiv.innerHTML = 'Error loading media';
+        }
+      }
+    } else {
+      this.handleLoad(outputSize, {matchSourceSize: opts.matchSourceSize});
+    }
+  }
+
+  private handleLoad(size: Point, opts?: {matchSourceSize?: boolean}) {
+    this.canDraw = true;
+    this.resize(size, opts);
+    this.onload();
+  }
+
+  public resize(size: Point, opts?: {matchSourceSize?: boolean}) {
+    if (opts?.matchSourceSize && this.domElement)
+      size = (this.domElement instanceof HTMLVideoElement) ? [this.domElement.videoWidth, this.domElement.videoHeight] : [this.domElement.naturalWidth, this.domElement.naturalHeight];
+    this.size = size;
+    this.didDraw = false;
+    this.outputFBO?.destroy();
+    this.outputFBO = regl.framebuffer({
       color: regl.texture({
         type: 'float32',
         format: 'rgba',
@@ -193,71 +276,6 @@ export class ColorSource {
       }),
       depthStencil: false,
     });
-    return instance;
-  };
-
-  public load(opts:{
-    type: 'media' | 'firerings' | 'colorspill' | 'spiral',
-    mediaUrl?: string,
-  }) {
-    let statusDiv = document.querySelector('#status')!;
-
-    this.shader = shaders[opts.type];
-    this.texture?.destroy();
-    this.texture = null;
-    this.domElement = null;
-    this.animated = true;
-    this.paused = false;
-    this.canDraw = opts.type != 'media';
-    this.didDraw = false;
-    this.videoElement.srcObject = null;
-    this.imageElement.onerror = null;
-    this.videoElement.onerror = null;
-
-    if (opts.mediaUrl == 'webcam') {
-      navigator.mediaDevices.getUserMedia({audio: false, video: {width: 1280, height: 720}})
-      .then(function(mediaStream) {
-        this.videoElement.srcObject = mediaStream;
-          this.videoElement.onloadedmetadata = function(e) {
-          this.canDraw = true;
-          this.canDraw = true;
-          this.animated = true;
-          this.domElement = this.videoElement;
-          this.videoElement.play();
-          this.texture = regl.texture(this.domElement);
-        }.bind(this);
-      }.bind(this));
-    } else if (opts.mediaUrl) {
-      let attempts = [this.imageElement, this.videoElement];
-      let errors = 0;
-      for (let i = 0; i < 2; i++) {
-        let elem = attempts[i];
-
-        elem.crossOrigin = 'anonymous';
-        elem.src = opts.mediaUrl;
-        statusDiv.innerHTML = 'Loading...';
-
-        let onload = (function() {
-          this.canDraw = true;
-          this.animated = i == 1;
-          this.domElement = elem;
-          this.texture = regl.texture(this.domElement);
-          statusDiv.innerHTML = '';
-        }).bind(this);
-
-        if (elem instanceof HTMLVideoElement) {
-          elem.autoplay = true;
-          elem.loop = true;
-          elem.addEventListener('loadeddata', onload);
-        } else {
-          elem.onload = onload;
-        }
-        elem.onerror = function() {
-          if (++errors >= 2)
-            statusDiv.innerHTML = 'Error loading media';
-        }
-      }
-    }
   }
 
   public ensureData() {
@@ -281,5 +299,5 @@ export class ColorSource {
     return this.paused;
   }
 
-  public getTexture() { return this.outputFBO.color[0]; }
+  public getTexture() { return this.outputFBO?.color[0]; }
 }
